@@ -129,6 +129,7 @@ signature = "— via spa (slack-personal-agent)"
 
 ## ドキュメント
 
+- **[セットアップガイド (EN)](docs/en/setup.md) / [(JA)](docs/ja/setup.ja.md)** — Slack App 作成、トークン設定、初回起動
 - [アーキテクチャ (EN)](docs/en/architecture.md) / [(JA)](docs/ja/architecture.ja.md)
 - [RFP (EN)](docs/en/slack-personal-agent-rfp.md) / [(JA)](docs/ja/slack-personal-agent-rfp.ja.md)
 
