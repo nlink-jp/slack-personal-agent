@@ -953,15 +953,17 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			IsSelf:   msg.User == selfID,
 		})
 	}
-	// mc.Messages already set above; mc.RecentHistory from DB
+	mc.Messages = allMsgs
 
 	if len(mc.Messages) == 0 {
+		a.log.Debug("agent: no messages after filtering for %s/%s", workspaceName, channelID)
 		return
 	}
 
+	a.log.Debug("agent: calling LLM for %s/%s (%d new msgs, %d history)", workspaceName, channelID, len(mc.Messages), len(mc.RecentHistory))
 	assessment, err := pipeline.Evaluate(a.ctx, mc)
 	if err != nil {
-		a.log.Debug("agent evaluation failed for %s/%s: %v", workspaceName, channelID, err)
+		a.log.Warn("agent evaluation failed for %s/%s: %v", workspaceName, channelID, err)
 		return
 	}
 	if assessment == nil {
