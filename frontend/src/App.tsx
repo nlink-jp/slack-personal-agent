@@ -48,7 +48,7 @@ declare global {
 interface WorkspaceStatus { name: string; has_token: boolean; polling: boolean; num_channels: number; }
 interface ChannelInfoRemote { id: string; name: string; is_private: boolean; num_members: number; topic: string; monitored: boolean; }
 interface ChannelStatsInfo { channel_id: string; channel_name: string; msg_count: number; last_ts: string; }
-interface QueryResult { record_id: string; workspace_id: string; channel_id: string; score: number; }
+interface QueryResult { record_id: string; workspace_id: string; channel_id: string; channel_name: string; user_name: string; content: string; ts: string; score: number; }
 interface Proposal { id: string; workspace_name: string; channel_name: string; trigger_text: string; draft_text: string; state: string; created_at: string; }
 interface KnowledgeEntry { id: string; title: string; content: string; scope: string; workspace_id: string; tags: string[]; created_at: string; updated_at: string; }
 
@@ -403,9 +403,16 @@ function QueryTab({ setError }: { setError: (e: string) => void }) {
       <div className="query-form">
         <input {...inputProps} placeholder="Workspace ID" value={queryWs} onChange={(e) => setQueryWs(e.target.value)} />
         <input {...inputProps} placeholder="Channel ID" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
-        <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleQuery()} />
+        <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !loading && handleQuery()} />
         <button onClick={handleQuery} disabled={loading}>{loading ? "Thinking..." : "Ask"}</button>
       </div>
+
+      {loading && (
+        <div className="loading-indicator">
+          <span className="loading-spinner" />
+          Searching knowledge base and generating answer...
+        </div>
+      )}
 
       {response?.answer && (
         <div className="answer-card">
@@ -416,14 +423,15 @@ function QueryTab({ setError }: { setError: (e: string) => void }) {
 
       {response?.sources && response.sources.length > 0 && (
         <div className="results">
-          <h3>Sources</h3>
+          <h3>Sources ({response.sources.length})</h3>
           {response.sources.map((r, i) => (
             <div key={i} className="result-card">
               <div className="result-meta">
-                <span>{r.workspace_id} / {r.channel_id}</span>
-                <span className="score">Score: {r.score.toFixed(4)}</span>
+                <span>#{r.channel_name || r.channel_id}</span>
+                <span className="muted">{r.user_name}</span>
+                <span className="score">{r.score.toFixed(3)}</span>
               </div>
-              <div className="result-id">{r.record_id}</div>
+              <div className="source-content">{r.content?.slice(0, 300)}{(r.content?.length || 0) > 300 ? "..." : ""}</div>
             </div>
           ))}
         </div>

@@ -537,12 +537,19 @@ func (a *App) Query(workspaceID, channelID, question string) (*QueryResponse, er
 
 	var sources []QueryResult
 	for _, r := range results {
-		sources = append(sources, QueryResult{
+		qr := QueryResult{
 			RecordID:    r.RecordID,
 			WorkspaceID: r.WorkspaceID,
 			ChannelID:   r.ChannelID,
 			Score:       r.Score,
-		})
+		}
+		if rec, err := a.store.GetRecord(a.ctx, r.RecordID); err == nil {
+			qr.Content = rec.Content
+			qr.UserName = rec.UserName
+			qr.Ts = rec.Ts
+			qr.ChannelName = a.store.GetCachedChannelName(a.ctx, r.WorkspaceID, r.ChannelID)
+		}
+		sources = append(sources, qr)
 	}
 
 	// Generate LLM answer if backend is available
@@ -599,6 +606,10 @@ type QueryResult struct {
 	RecordID    string  `json:"record_id"`
 	WorkspaceID string  `json:"workspace_id"`
 	ChannelID   string  `json:"channel_id"`
+	ChannelName string  `json:"channel_name"`
+	UserName    string  `json:"user_name"`
+	Content     string  `json:"content"`
+	Ts          string  `json:"ts"`
 	Score       float64 `json:"score"`
 }
 

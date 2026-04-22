@@ -123,6 +123,30 @@ func (s *Store) migrate() error {
 }
 
 // InsertRecord inserts a new memory record, skipping if a record with the same ID already exists.
+// GetRecord retrieves a single record by ID.
+func (s *Store) GetRecord(ctx context.Context, id string) (*Record, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, workspace_id, workspace_name, channel_id, channel_name,
+			user_id, user_name, ts, thread_ts, content, tier, author_type, is_summary,
+			summary_of, created_at, embedding_id
+		FROM records WHERE id = ?`, id)
+
+	var r Record
+	var tier, authorType, summaryOfJSON string
+	err := row.Scan(
+		&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.ChannelID, &r.ChannelName,
+		&r.UserID, &r.UserName, &r.Ts, &r.ThreadTs, &r.Content, &tier, &authorType,
+		&r.IsSummary, &summaryOfJSON, &r.CreatedAt, &r.EmbeddingID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	r.Tier = Tier(tier)
+	r.AuthorType = AuthorType(authorType)
+	r.SummaryOf = unmarshalSummaryOf(summaryOfJSON)
+	return &r, nil
+}
+
 func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
 	// Check for existing record to prevent duplicates (e.g., after restart)
 	var count int
