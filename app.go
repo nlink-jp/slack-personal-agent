@@ -873,8 +873,15 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 		a.store.UpdateChannelPolled(a.ctx, workspaceName, channelID, latestTs)
 	}
 
-	// Run agent pipeline in background — evaluate if user action is needed
-	go a.runAgentPipeline(workspaceName, channelID, messages)
+	// Run agent pipeline only for small batches of new messages.
+	// Large batches (>20) indicate initial fetch or catch-up — store only, don't evaluate.
+	// This prevents flooding the LLM with evaluation requests on startup.
+	const maxEvalBatch = 20
+	if len(messages) <= maxEvalBatch && len(messages) > 0 {
+		go a.runAgentPipeline(workspaceName, channelID, messages)
+	} else if len(messages) > maxEvalBatch {
+		a.log.Debug("skipping agent eval for %s/%s: batch too large (%d msgs, threshold %d)", workspaceName, channelID, len(messages), maxEvalBatch)
+	}
 }
 
 // runAgentPipeline evaluates new messages and creates MITL proposals or notifications.
@@ -900,7 +907,10 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 		return
 	}
 
-	// Build message context
+	// Build message context — only evaluate the most recent messages
+	// to avoid overwhelming the LLM with large conversation dumps.
+	const maxEvalMessages = 10
+
 	channelName := a.store.GetCachedChannelName(a.ctx, workspaceName, channelID)
 	mc := agent.MessageContext{
 		WorkspaceID:   workspaceName,
@@ -909,12 +919,15 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 		ChannelName:   channelName,
 	}
 
-	for _, msg := range messages {
+	// Messages from Slack are newest-first; reverse to chronological order
+	var allMsgs []agent.MessageInfo
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
 		if msg.Text == "" {
 			continue
 		}
 		userName := a.store.GetCachedUserName(a.ctx, workspaceName, msg.User)
-		mc.Messages = append(mc.Messages, agent.MessageInfo{
+		allMsgs = append(allMsgs, agent.MessageInfo{
 			User:     msg.User,
 			UserName: userName,
 			Text:     msg.Text,
@@ -923,6 +936,14 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			IsBot:    msg.BotID != "" || msg.SubType == "bot_message",
 			IsSelf:   msg.User == selfID,
 		})
+	}
+
+	// Split: older messages as context, recent ones as evaluation target
+	if len(allMsgs) > maxEvalMessages {
+		mc.RecentHistory = allMsgs[:len(allMsgs)-maxEvalMessages]
+		mc.Messages = allMsgs[len(allMsgs)-maxEvalMessages:]
+	} else {
+		mc.Messages = allMsgs
 	}
 
 	if len(mc.Messages) == 0 {
