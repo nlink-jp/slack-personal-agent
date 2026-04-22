@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/keychain"
 	"github.com/nlink-jp/slack-personal-agent/internal/llm"
 	"github.com/nlink-jp/slack-personal-agent/internal/knowledge"
+	"github.com/nlink-jp/slack-personal-agent/internal/logger"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
 	"github.com/nlink-jp/slack-personal-agent/internal/notify"
@@ -25,6 +25,7 @@ import (
 // App holds the application state and provides Wails bindings.
 type App struct {
 	ctx       context.Context
+	log       *logger.Logger
 	cfg       *config.Config
 	store     *memory.Store
 	retriever *rag.Retriever
@@ -54,10 +55,16 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
+	// Initialize logger
+	dataDir := config.DefaultDataDir()
+	logger.Init(filepath.Join(dataDir, "logs"))
+	a.log = logger.New("app")
+	a.log.Info("starting slack-personal-agent %s", version)
+
 	// Load config
 	cfg, err := config.Load(config.DefaultConfigPath())
 	if err != nil {
-		log.Printf("Warning: config load failed: %v", err)
+		a.log.Warn("config load failed: %v", err)
 		cfg = config.DefaultConfig()
 	}
 	a.cfg = cfg
@@ -66,11 +73,10 @@ func (a *App) startup(ctx context.Context) {
 	a.keys = &keychain.OSStore{}
 
 	// Initialize memory store (DuckDB)
-	dataDir := config.DefaultDataDir()
 	dbPath := filepath.Join(dataDir, "spa.db")
 	store, err := memory.Open(dbPath)
 	if err != nil {
-		log.Printf("Error: failed to open database: %v", err)
+		a.log.Error("failed to open database: %v", err)
 		return
 	}
 	a.store = store
@@ -78,14 +84,14 @@ func (a *App) startup(ctx context.Context) {
 	// Initialize LLM backend
 	backend, err := llm.NewBackend(cfg)
 	if err != nil {
-		log.Printf("Warning: LLM backend init failed: %v", err)
+		a.log.Warn("LLM backend init failed: %v", err)
 	}
 	a.backend = backend
 
 	// Initialize embedding
 	embedder, err := embedding.NewEmbedder(cfg)
 	if err != nil {
-		log.Printf("Warning: embedding init failed (using mock): %v", err)
+		a.log.Warn("embedding init failed (using mock): %v", err)
 		embedder = embedding.NewMockEmbedder(384)
 	}
 	a.embedder = embedder
@@ -93,21 +99,21 @@ func (a *App) startup(ctx context.Context) {
 	// Initialize RAG retriever
 	retriever := rag.NewRetriever(store.DB(), embedder)
 	if err := retriever.Migrate(); err != nil {
-		log.Printf("Error: RAG migration failed: %v", err)
+		a.log.Error("RAG migration failed: %v", err)
 	}
 	a.retriever = retriever
 
 	// Initialize knowledge base
 	kb := knowledge.NewStore(store.DB())
 	if err := kb.Migrate(); err != nil {
-		log.Printf("Error: knowledge migration failed: %v", err)
+		a.log.Error("knowledge migration failed: %v", err)
 	}
 	a.kb = kb
 
 	// Initialize MITL manager
 	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
 	a.mitlMgr.OnProposal = func(p *mitl.Proposal) {
-		log.Printf("MITL proposal: [%s/%s] %s", p.WorkspaceName, p.ChannelName, p.DraftText[:min(len(p.DraftText), 80)])
+		a.log.Info("MITL proposal: [%s/%s] %s", p.WorkspaceName, p.ChannelName, p.DraftText[:min(len(p.DraftText), 80)])
 		// macOS notification
 		title := "spa: Response Proposal"
 		subtitle := fmt.Sprintf("%s / %s", p.WorkspaceName, p.ChannelName)
@@ -118,23 +124,27 @@ func (a *App) startup(ctx context.Context) {
 		notify.SendWithSubtitle(ctx, title, subtitle, body)
 	}
 	a.mitlMgr.OnExpire = func(p *mitl.Proposal) {
-		log.Printf("MITL expired: %s", p.ID)
+		a.log.Info("MITL expired: %s", p.ID)
 	}
 
 	// Check embedding model consistency
 	storedID, consistent, err := retriever.CheckModelConsistency(ctx)
 	if err != nil {
-		log.Printf("Warning: model consistency check failed: %v", err)
+		a.log.Warn("model consistency check failed: %v", err)
 	} else if !consistent {
-		log.Printf("Warning: embedding model changed (stored=%q, current=%q) — re-index recommended", storedID, embedder.ModelID())
+		a.log.Warn("embedding model changed (stored=%q, current=%q) — re-index recommended", storedID, embedder.ModelID())
 	}
 }
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(_ context.Context) {
+	if a.log != nil {
+		a.log.Info("shutting down")
+	}
 	if a.store != nil {
 		a.store.Close()
 	}
+	logger.Close()
 }
 
 // ── Wails Bindings ──────────────────────────────────────
@@ -222,7 +232,7 @@ func (a *App) StartPolling(workspace string) error {
 		return fmt.Errorf("auth.test for %q: %w", workspace, err)
 	}
 	a.selfIDs[workspace] = selfID
-	log.Printf("Authenticated as user %s in workspace %q", selfID, workspace)
+	a.log.Info("authenticated as user %s in workspace %q", selfID, workspace)
 
 	queue := slack.NewQueue(a.cfg.Polling.MaxRatePerMin)
 	scheduler := slack.NewScheduler(client, queue,
@@ -244,6 +254,9 @@ func (a *App) StartPolling(workspace string) error {
 
 	poller := slack.NewWorkspacePoller(workspace, client, queue, scheduler)
 	poller.OnMessages = a.handleMessages
+	poller.OnError = func(ws, ch string, err error) {
+		a.log.Error("polling %s/%s: %v", ws, ch, err)
+	}
 
 	a.pollers[workspace] = poller
 	a.clients[workspace] = client
@@ -256,7 +269,7 @@ func (a *App) StartPolling(workspace string) error {
 	go scheduler.Run(wsCtx)
 	go poller.Run(wsCtx)
 
-	log.Printf("Started polling %q (%d channels)", workspace, len(channelIDs))
+	a.log.Info("started polling %q (%d channels)", workspace, len(channelIDs))
 	return nil
 }
 
@@ -403,7 +416,7 @@ func (a *App) AddKnowledge(title, content, scope, workspaceID string, tags []str
 	ragWS, ragCH := knowledgeRAGScope(entry)
 	embID := "kb-" + entry.ID
 	if err := a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content); err != nil {
-		log.Printf("Warning: failed to index knowledge %q: %v", entry.ID, err)
+		a.log.Warn("failed to index knowledge %q: %v", entry.ID, err)
 	}
 
 	return entry, nil
@@ -433,7 +446,7 @@ func (a *App) UpdateKnowledge(id, title, content, scope, workspaceID string, tag
 	ragWS, ragCH := knowledgeRAGScope(entry)
 	embID := "kb-" + entry.ID
 	if err := a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content); err != nil {
-		log.Printf("Warning: failed to re-index knowledge %q: %v", id, err)
+		a.log.Warn("failed to re-index knowledge %q: %v", id, err)
 	}
 	return nil
 }
@@ -497,14 +510,14 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 		}
 
 		if err := a.store.InsertRecord(a.ctx, record); err != nil {
-			log.Printf("Error inserting record: %v", err)
+			a.log.Error("inserting record: %v", err)
 			continue
 		}
 
 		// Index for RAG
 		embID := record.ID + "-emb"
 		if err := a.retriever.Index(a.ctx, embID, record.ID, workspaceName, channelID, msg.Text); err != nil {
-			log.Printf("Error indexing record: %v", err)
+			a.log.Error("indexing record: %v", err)
 		}
 	}
 

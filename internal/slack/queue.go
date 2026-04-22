@@ -3,7 +3,6 @@ package slack
 import (
 	"container/heap"
 	"context"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -264,6 +263,8 @@ type WorkspacePoller struct {
 	Scheduler *Scheduler
 	// OnMessages is called when new messages are fetched for a channel.
 	OnMessages func(workspaceName, channelID string, messages []Message)
+	// OnError is called when a polling error occurs.
+	OnError func(workspaceName, channelID string, err error)
 	// lastTs tracks the latest timestamp per channel for incremental polling.
 	lastTs map[string]string
 	mu     sync.Mutex
@@ -294,7 +295,9 @@ func (wp *WorkspacePoller) Run(ctx context.Context) {
 
 		messages, err := wp.Client.FetchHistory(ctx, entry.ChannelID, oldest, 200)
 		if err != nil {
-			fmt.Printf("[%s] error fetching %s: %v\n", wp.Name, entry.ChannelID, err)
+			if wp.OnError != nil {
+				wp.OnError(wp.Name, entry.ChannelID, err)
+			}
 			continue
 		}
 
