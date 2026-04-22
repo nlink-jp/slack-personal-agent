@@ -55,6 +55,19 @@ interface KnowledgeEntry { id: string; title: string; content: string; scope: st
 
 type Tab = "dashboard" | "query" | "proposals" | "knowledge" | "settings";
 
+// Convert Slack timestamp (e.g., "1713488400.000100") to readable date/time
+function formatSlackTs(ts: string): string {
+  if (!ts) return "";
+  const secs = parseFloat(ts);
+  if (isNaN(secs)) return ts;
+  const d = new Date(secs * 1000);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return time;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+}
+
 function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [version, setVersion] = useState("");
@@ -190,26 +203,24 @@ function DashboardTab({ workspaces, memoryStats }: {
         </div>
       </section>
 
-      <section className="section timeline-section">
-        <h2>Timeline {timeline.length > 0 && <span className="muted">({timeline.length})</span>}</h2>
-        <div className="timeline" ref={timelineRef}>
-          {timeline.length === 0 ? (
-            <p className="muted">Waiting for new messages...</p>
-          ) : (
-            timeline.map((msg, i) => (
-              <div key={`${msg.ts}-${i}`} className={`timeline-item ${msg.author_type === "self" ? "timeline-self" : ""} ${msg.author_type === "bot" ? "timeline-bot" : ""}`}>
-                <div className="timeline-meta">
-                  <span className="timeline-channel">#{msg.channel_name || msg.channel_id}</span>
-                  <span className="timeline-user">{msg.user_name || "unknown"}</span>
-                  {msg.author_type === "bot" && <span className="badge badge-inactive">bot</span>}
-                  {msg.author_type === "self" && <span className="badge badge-ok">you</span>}
-                </div>
-                <div className="timeline-text">{msg.text.length > 300 ? msg.text.slice(0, 300) + "..." : msg.text}</div>
+      <div className="timeline-container" ref={timelineRef}>
+        {timeline.length === 0 ? (
+          <p className="muted" style={{ padding: 24 }}>Waiting for new messages...</p>
+        ) : (
+          timeline.map((msg, i) => (
+            <div key={`${msg.ts}-${i}`} className={`bubble ${msg.author_type === "self" ? "bubble-self" : ""} ${msg.author_type === "bot" ? "bubble-bot" : ""}`}>
+              <div className="bubble-header">
+                <span className="bubble-channel">#{msg.channel_name || msg.channel_id}</span>
+                <span className="bubble-user">{msg.user_name || "unknown"}</span>
+                {msg.author_type === "bot" && <span className="badge badge-inactive">bot</span>}
+                {msg.author_type === "self" && <span className="badge badge-ok">you</span>}
+                <span className="bubble-time">{formatSlackTs(msg.ts)}</span>
               </div>
-            ))
-          )}
-        </div>
-      </section>
+              <div className="bubble-text">{msg.text.length > 500 ? msg.text.slice(0, 500) + "..." : msg.text}</div>
+            </div>
+          ))
+        )}
+      </div>
     </>
   );
 }

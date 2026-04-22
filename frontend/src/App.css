@@ -72,6 +72,10 @@ textarea {
   max-width: 960px;
   margin: 0 auto;
   padding: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .header {
@@ -355,64 +359,72 @@ textarea {
   color: var(--accent);
 }
 
-/* Timeline */
-.timeline-section {
+/* Timeline container — fills remaining height */
+.timeline-container {
   flex: 1;
-}
-
-.timeline {
-  max-height: 600px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0; /* Allow flex shrink */
+}
+
+/* Chat bubble */
+.bubble {
   background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  max-width: 85%;
+  animation: slideUp 0.2s ease-out;
 }
 
-.timeline-item {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  animation: fadeIn 0.3s ease-out;
+.bubble-self {
+  align-self: flex-end;
+  background: rgba(88, 166, 255, 0.08);
+  border-color: rgba(88, 166, 255, 0.3);
 }
 
-.timeline-item:last-child {
-  border-bottom: none;
+.bubble-bot {
+  opacity: 0.75;
 }
 
-.timeline-self {
-  border-left: 3px solid var(--accent);
-}
-
-.timeline-bot {
-  border-left: 3px solid var(--text-secondary);
-}
-
-.timeline-meta {
+.bubble-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 2px;
-  font-size: 0.8rem;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
 }
 
-.timeline-channel {
+.bubble-channel {
   font-weight: 600;
   color: var(--accent);
 }
 
-.timeline-user {
+.bubble-user {
   color: var(--text-secondary);
 }
 
-.timeline-text {
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--text-primary);
-  word-break: break-word;
+.bubble-time {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.bubble-text {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Memory stats */
