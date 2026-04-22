@@ -43,6 +43,11 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying sql.DB for shared use (e.g., RAG retriever).
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 func (s *Store) migrate() error {
 	ddl := `
 		CREATE TABLE IF NOT EXISTS records (
