@@ -33,9 +33,10 @@ func main() {
 	}
 
 	err = wails.Run(&options.App{
-		Title:  "slack-personal-agent",
-		Width:  width,
-		Height: height,
+		Title:            "slack-personal-agent",
+		Width:            width,
+		Height:           height,
+		HideWindowOnClose: false, // Window close = app quit (no hidden background process)
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
