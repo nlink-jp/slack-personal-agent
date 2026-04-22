@@ -49,14 +49,15 @@ type Channel struct {
 
 // Message represents a Slack message.
 type Message struct {
-	Type      string `json:"type"`
-	SubType   string `json:"subtype,omitempty"`
-	User      string `json:"user"`
-	Text      string `json:"text"`
-	Ts        string `json:"ts"`
-	ThreadTs  string `json:"thread_ts,omitempty"`
-	ReplyCount int   `json:"reply_count,omitempty"`
-	Files     []File `json:"files,omitempty"`
+	Type       string `json:"type"`
+	SubType    string `json:"subtype,omitempty"`
+	User       string `json:"user"`
+	BotID      string `json:"bot_id,omitempty"`
+	Text       string `json:"text"`
+	Ts         string `json:"ts"`
+	ThreadTs   string `json:"thread_ts,omitempty"`
+	ReplyCount int    `json:"reply_count,omitempty"`
+	Files      []File `json:"files,omitempty"`
 }
 
 // File represents a Slack file attachment.

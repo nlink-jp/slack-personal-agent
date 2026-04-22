@@ -468,10 +468,16 @@ func knowledgeRAGScope(e *knowledge.Entry) (workspaceID, channelID string) {
 }
 
 // classifyAuthor determines the authorship type of a message.
+// - bot: has bot_id or subtype=bot_message
 // - proxy: from authenticated user AND contains the proxy signature
 // - self: from authenticated user (direct post)
 // - other: from another user
 func (a *App) classifyAuthor(workspaceName string, msg slack.Message) memory.AuthorType {
+	// Bot messages
+	if msg.BotID != "" || msg.SubType == "bot_message" {
+		return memory.AuthorBot
+	}
+
 	a.mu.Lock()
 	selfID := a.selfIDs[workspaceName]
 	a.mu.Unlock()
@@ -490,9 +496,25 @@ func (a *App) classifyAuthor(workspaceName string, msg slack.Message) memory.Aut
 
 // handleMessages processes new messages from a workspace poller.
 func (a *App) handleMessages(workspaceName, channelID string, messages []slack.Message) {
+	// Subtypes to skip — channel lifecycle events, not meaningful content
+	skipSubtypes := map[string]bool{
+		"channel_join":    true,
+		"channel_leave":   true,
+		"channel_topic":   true,
+		"channel_purpose": true,
+		"channel_name":    true,
+		"channel_archive": true,
+		"channel_unarchive": true,
+		"pinned_item":     true,
+		"unpinned_item":   true,
+	}
+
 	for _, msg := range messages {
-		if msg.SubType != "" {
-			continue // Skip system messages
+		if skipSubtypes[msg.SubType] {
+			continue
+		}
+		if msg.Text == "" {
+			continue // No content to store
 		}
 
 		record := &memory.Record{

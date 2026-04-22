@@ -19,6 +19,7 @@ const (
 	AuthorOther AuthorType = "other" // Message from another user
 	AuthorSelf  AuthorType = "self"  // Message written directly by the authenticated user
 	AuthorProxy AuthorType = "proxy" // Message posted by spa on behalf of the user (MITL)
+	AuthorBot   AuthorType = "bot"   // Message from a bot/integration
 )
 
 // Record represents a stored message or summary in the memory system.
