@@ -21,6 +21,7 @@ type Config struct {
 	Polling    PollingConfig     `toml:"polling" json:"polling"`
 	Memory     MemoryConfig      `toml:"memory" json:"memory"`
 	Response   ResponseConfig    `toml:"response" json:"response"`
+	Scopes     []ScopeGroup      `toml:"scope_group" json:"scope_groups"`
 	Window     WindowConfig      `toml:"window" json:"window"`
 	Theme      string            `toml:"theme" json:"theme"`
 }
@@ -112,6 +113,20 @@ type ResponseConfig struct {
 // Timeout returns the response approval timeout as a time.Duration.
 func (r ResponseConfig) Timeout() time.Duration {
 	return time.Duration(r.TimeoutSec) * time.Second
+}
+
+// ScopeGroup defines a cross-channel or cross-workspace permission group.
+// Level 2: channels within the same workspace.
+// Level 3: channels across workspaces.
+type ScopeGroup struct {
+	Name    string       `toml:"name" json:"name"`
+	Members []ScopeMember `toml:"member" json:"members"`
+}
+
+// ScopeMember defines a workspace+channel pair in a scope group.
+type ScopeMember struct {
+	WorkspaceID string `toml:"workspace" json:"workspace"`
+	ChannelID   string `toml:"channel" json:"channel"`
 }
 
 // WindowConfig holds window position and size.
