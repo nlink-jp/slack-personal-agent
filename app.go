@@ -199,12 +199,10 @@ func (a *App) shutdown(_ context.Context) {
 }
 
 // startNotifierHelper launches the spa-notify helper binary.
-// Looks for it next to the main binary or in the app bundle Resources.
+// Helper must be in Contents/MacOS/ to inherit the app's bundle identity.
 func (a *App) startNotifierHelper() {
-	// Search paths for the helper binary
 	candidates := []string{
-		filepath.Join(filepath.Dir(os.Args[0]), "spa-notify"),            // Same directory as main binary
-		filepath.Join(filepath.Dir(os.Args[0]), "..", "Resources", "spa-notify"), // Inside .app bundle
+		filepath.Join(filepath.Dir(os.Args[0]), "spa-notify"), // Contents/MacOS/spa-notify
 	}
 
 	var helperPath string

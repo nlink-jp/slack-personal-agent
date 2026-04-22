@@ -7,9 +7,8 @@ build: build-notifier
 	wails build -ldflags "$(LDFLAGS)" -tags no_duckdb_arrow
 	mkdir -p dist
 	cp -r build/bin/slack-personal-agent.app dist/
-	# Bundle notifier helper inside .app
-	mkdir -p dist/slack-personal-agent.app/Contents/Resources
-	cp notifier/.build/release/spa-notify dist/slack-personal-agent.app/Contents/Resources/
+	# Bundle notifier helper inside .app (MacOS dir shares bundle identity)
+	cp notifier/.build/release/spa-notify dist/slack-personal-agent.app/Contents/MacOS/
 
 build-notifier:
 	cd notifier && swift build -c release
