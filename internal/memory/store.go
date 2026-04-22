@@ -85,11 +85,22 @@ func (s *Store) migrate() error {
 			channel_id    VARCHAR NOT NULL,
 			channel_name  VARCHAR NOT NULL,
 			is_private    BOOLEAN NOT NULL DEFAULT FALSE,
+			num_members   INTEGER NOT NULL DEFAULT 0,
 			topic         VARCHAR NOT NULL DEFAULT '',
 			purpose       VARCHAR NOT NULL DEFAULT '',
 			last_polled   TIMESTAMP,
 			last_ts       VARCHAR NOT NULL DEFAULT '',
+			cached_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (workspace_id, channel_id)
+		);
+
+		CREATE TABLE IF NOT EXISTS users (
+			workspace_id  VARCHAR NOT NULL,
+			user_id       VARCHAR NOT NULL,
+			user_name     VARCHAR NOT NULL DEFAULT '',
+			real_name     VARCHAR NOT NULL DEFAULT '',
+			cached_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (workspace_id, user_id)
 		);
 	`
 	_, err := s.db.Exec(ddl)
@@ -205,17 +216,20 @@ func (s *Store) CountByTier(ctx context.Context) (map[Tier]int, error) {
 	return counts, rows.Err()
 }
 
-// UpsertChannel inserts or updates channel metadata.
-func (s *Store) UpsertChannel(ctx context.Context, workspaceID, channelID, channelName string, isPrivate bool, topic, purpose string) error {
+// UpsertChannel inserts or updates channel metadata with cache timestamp.
+func (s *Store) UpsertChannel(ctx context.Context, workspaceID, channelID, channelName string, isPrivate bool, numMembers int, topic, purpose string) error {
+	now := time.Now()
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO channels (workspace_id, channel_id, channel_name, is_private, topic, purpose)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO channels (workspace_id, channel_id, channel_name, is_private, num_members, topic, purpose, cached_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (workspace_id, channel_id)
 		DO UPDATE SET channel_name = EXCLUDED.channel_name,
 			is_private = EXCLUDED.is_private,
+			num_members = EXCLUDED.num_members,
 			topic = EXCLUDED.topic,
-			purpose = EXCLUDED.purpose`,
-		workspaceID, channelID, channelName, isPrivate, topic, purpose)
+			purpose = EXCLUDED.purpose,
+			cached_at = EXCLUDED.cached_at`,
+		workspaceID, channelID, channelName, isPrivate, numMembers, topic, purpose, now)
 	return err
 }
 
@@ -226,6 +240,76 @@ func (s *Store) UpdateChannelPolled(ctx context.Context, workspaceID, channelID,
 		WHERE workspace_id = ? AND channel_id = ?`,
 		lastTs, workspaceID, channelID)
 	return err
+}
+
+// CachedChannel holds cached channel data.
+type CachedChannel struct {
+	WorkspaceID string
+	ChannelID   string
+	ChannelName string
+	IsPrivate   bool
+	NumMembers  int
+	Topic       string
+	Purpose     string
+	CachedAt    time.Time
+}
+
+// ListCachedChannels returns channels from cache for a workspace.
+func (s *Store) ListCachedChannels(ctx context.Context, workspaceID string) ([]CachedChannel, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT workspace_id, channel_id, channel_name, is_private, num_members, topic, purpose, cached_at
+		FROM channels WHERE workspace_id = ? ORDER BY channel_name`,
+		workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CachedChannel
+	for rows.Next() {
+		var ch CachedChannel
+		if err := rows.Scan(&ch.WorkspaceID, &ch.ChannelID, &ch.ChannelName, &ch.IsPrivate, &ch.NumMembers, &ch.Topic, &ch.Purpose, &ch.CachedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, ch)
+	}
+	return result, rows.Err()
+}
+
+// ChannelCacheAge returns the oldest cache timestamp for a workspace's channels.
+// Returns zero time if no cache exists.
+func (s *Store) ChannelCacheAge(ctx context.Context, workspaceID string) (time.Time, error) {
+	var oldest time.Time
+	err := s.db.QueryRowContext(ctx,
+		`SELECT MIN(cached_at) FROM channels WHERE workspace_id = ?`,
+		workspaceID).Scan(&oldest)
+	if err != nil {
+		return time.Time{}, nil
+	}
+	return oldest, nil
+}
+
+// UpsertUser inserts or updates user cache.
+func (s *Store) UpsertUser(ctx context.Context, workspaceID, userID, userName, realName string) error {
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO users (workspace_id, user_id, user_name, real_name, cached_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (workspace_id, user_id)
+		DO UPDATE SET user_name = EXCLUDED.user_name,
+			real_name = EXCLUDED.real_name,
+			cached_at = EXCLUDED.cached_at`,
+		workspaceID, userID, userName, realName, now)
+	return err
+}
+
+// GetCachedUserName returns the cached user name, or empty string if not cached.
+func (s *Store) GetCachedUserName(ctx context.Context, workspaceID, userID string) string {
+	var name string
+	s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(real_name, user_name) FROM users WHERE workspace_id = ? AND user_id = ?`,
+		workspaceID, userID).Scan(&name)
+	return name
 }
 
 func scanRecords(rows *sql.Rows) ([]Record, error) {

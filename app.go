@@ -210,6 +210,105 @@ func (a *App) SetWorkspaceToken(workspace, token string) error {
 	return a.keys.Set(keychain.WorkspaceTokenKey(workspace), token)
 }
 
+// ChannelInfo holds channel information for the frontend.
+type ChannelInfo struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	IsPrivate bool   `json:"is_private"`
+	NumMembers int   `json:"num_members"`
+	Topic     string `json:"topic"`
+	Monitored bool   `json:"monitored"` // Currently in config.channels
+}
+
+// channelCacheTTL is how long cached channel lists remain valid.
+const channelCacheTTL = 24 * time.Hour
+
+// ListAvailableChannels returns all channels the user can access in a workspace.
+// Uses DuckDB cache with 24h TTL. Only fetches from Slack API when cache is stale.
+// Pass forceRefresh=true to bypass cache.
+func (a *App) ListAvailableChannels(workspace string, forceRefresh bool) ([]ChannelInfo, error) {
+	// Check cache age
+	if !forceRefresh {
+		oldest, _ := a.store.ChannelCacheAge(a.ctx, workspace)
+		if !oldest.IsZero() && time.Since(oldest) < channelCacheTTL {
+			return a.channelsFromCache(workspace)
+		}
+	}
+
+	// Cache miss or stale — fetch from Slack API
+	token, err := a.keys.Get(keychain.WorkspaceTokenKey(workspace))
+	if err != nil {
+		// No token: try returning cache anyway
+		cached, cacheErr := a.channelsFromCache(workspace)
+		if cacheErr == nil && len(cached) > 0 {
+			return cached, nil
+		}
+		return nil, fmt.Errorf("no token for workspace %q: %w", workspace, err)
+	}
+
+	a.log.Info("refreshing channel list for %q from Slack API", workspace)
+	client := slack.NewClient(token)
+	channels, err := client.ListChannels(a.ctx)
+	if err != nil {
+		// API failed: try returning cache
+		a.log.Warn("channel list API failed, using cache: %v", err)
+		return a.channelsFromCache(workspace)
+	}
+
+	// Update cache in background-friendly batches
+	for _, ch := range channels {
+		a.store.UpsertChannel(a.ctx, workspace, ch.ID, ch.Name, ch.IsPrivate, ch.NumMembers, ch.Topic.Value, ch.Purpose.Value)
+	}
+	a.log.Info("cached %d channels for %q", len(channels), workspace)
+
+	return a.channelsFromCache(workspace)
+}
+
+// channelsFromCache reads from DuckDB and annotates with monitored status.
+func (a *App) channelsFromCache(workspace string) ([]ChannelInfo, error) {
+	cached, err := a.store.ListCachedChannels(a.ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	monitored := make(map[string]bool)
+	for _, ws := range a.cfg.Workspaces {
+		if ws.Name == workspace {
+			for _, ch := range ws.Channels {
+				monitored[ch] = true
+			}
+			break
+		}
+	}
+
+	result := make([]ChannelInfo, 0, len(cached))
+	for _, ch := range cached {
+		result = append(result, ChannelInfo{
+			ID:         ch.ChannelID,
+			Name:       ch.ChannelName,
+			IsPrivate:  ch.IsPrivate,
+			NumMembers: ch.NumMembers,
+			Topic:      ch.Topic,
+			Monitored:  monitored[ch.ChannelID],
+		})
+	}
+	return result, nil
+}
+
+// SetMonitoredChannels updates the monitored channel list for a workspace and saves config.
+func (a *App) SetMonitoredChannels(workspace string, channelIDs []string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for i := range a.cfg.Workspaces {
+		if a.cfg.Workspaces[i].Name == workspace {
+			a.cfg.Workspaces[i].Channels = channelIDs
+			return config.Save(a.cfg, config.DefaultConfigPath())
+		}
+	}
+	return fmt.Errorf("workspace %q not found in config", workspace)
+}
+
 // StartPolling starts polling for a workspace.
 func (a *App) StartPolling(workspace string) error {
 	a.mu.Lock()
@@ -234,23 +333,31 @@ func (a *App) StartPolling(workspace string) error {
 	a.selfIDs[workspace] = selfID
 	a.log.Info("authenticated as user %s in workspace %q", selfID, workspace)
 
+	// Resolve monitored channels from config (whitelist only)
+	var wsCfg *config.WorkspaceConfig
+	for i := range a.cfg.Workspaces {
+		if a.cfg.Workspaces[i].Name == workspace {
+			wsCfg = &a.cfg.Workspaces[i]
+			break
+		}
+	}
+	if wsCfg == nil {
+		return fmt.Errorf("workspace %q not found in config", workspace)
+	}
+	if len(wsCfg.Channels) == 0 {
+		return fmt.Errorf("no channels configured for workspace %q — use ListAvailableChannels to discover and add channels to config.toml", workspace)
+	}
+
 	queue := slack.NewQueue(a.cfg.Polling.MaxRatePerMin)
 	scheduler := slack.NewScheduler(client, queue,
 		a.cfg.Polling.Interval(),
 		a.cfg.Polling.PriorityBoostInterval())
 
-	// Discover channels
-	channels, err := client.ListChannels(a.ctx)
-	if err != nil {
-		return fmt.Errorf("list channels for %q: %w", workspace, err)
+	// Register configured channels and store metadata
+	for _, chID := range wsCfg.Channels {
+		a.store.UpsertChannel(a.ctx, workspace, chID, "", false, 0, "", "")
 	}
-
-	channelIDs := make([]string, 0, len(channels))
-	for _, ch := range channels {
-		channelIDs = append(channelIDs, ch.ID)
-		a.store.UpsertChannel(a.ctx, workspace, ch.ID, ch.Name, ch.IsPrivate, ch.Topic.Value, ch.Purpose.Value)
-	}
-	scheduler.SetChannels(channelIDs)
+	scheduler.SetChannels(wsCfg.Channels)
 
 	poller := slack.NewWorkspacePoller(workspace, client, queue, scheduler)
 	poller.OnMessages = a.handleMessages
@@ -269,7 +376,7 @@ func (a *App) StartPolling(workspace string) error {
 	go scheduler.Run(wsCtx)
 	go poller.Run(wsCtx)
 
-	a.log.Info("started polling %q (%d channels)", workspace, len(channelIDs))
+	a.log.Info("started polling %q (%d channels)", workspace, len(wsCfg.Channels))
 	return nil
 }
 
@@ -467,6 +574,26 @@ func knowledgeRAGScope(e *knowledge.Entry) (workspaceID, channelID string) {
 	return e.WorkspaceID, "__knowledge__"
 }
 
+// resolveAndCacheUser fetches a user's info from Slack and caches it.
+// Called in background goroutine to avoid blocking message processing.
+func (a *App) resolveAndCacheUser(workspaceName, userID string) {
+	a.mu.Lock()
+	client := a.clients[workspaceName]
+	a.mu.Unlock()
+
+	if client == nil {
+		return
+	}
+
+	user, err := client.GetUser(a.ctx, userID)
+	if err != nil {
+		a.log.Debug("failed to resolve user %s: %v", userID, err)
+		return
+	}
+
+	a.store.UpsertUser(a.ctx, workspaceName, userID, user.Name, user.RealName)
+}
+
 // classifyAuthor determines the authorship type of a message.
 // - bot: has bot_id or subtype=bot_message
 // - proxy: from authenticated user AND contains the proxy signature
@@ -517,12 +644,23 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 			continue // No content to store
 		}
 
+		// Resolve user name from cache; lazy-fetch if missing
+		userName := ""
+		if msg.User != "" {
+			userName = a.store.GetCachedUserName(a.ctx, workspaceName, msg.User)
+			if userName == "" {
+				// Background resolve — don't block message processing
+				go a.resolveAndCacheUser(workspaceName, msg.User)
+			}
+		}
+
 		record := &memory.Record{
 			ID:            fmt.Sprintf("%s-%s-%s", workspaceName, channelID, msg.Ts),
 			WorkspaceID:   workspaceName,
 			WorkspaceName: workspaceName,
 			ChannelID:     channelID,
 			UserID:        msg.User,
+			UserName:      userName,
 			Ts:            msg.Ts,
 			ThreadTs:      msg.ThreadTs,
 			Content:       msg.Text,

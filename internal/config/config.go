@@ -29,7 +29,8 @@ type Config struct {
 // WorkspaceConfig defines a Slack workspace.
 // Tokens are stored in macOS Keychain, not here.
 type WorkspaceConfig struct {
-	Name string `toml:"name" json:"name"`
+	Name     string   `toml:"name" json:"name"`
+	Channels []string `toml:"channels" json:"channels"` // Channel IDs to monitor (whitelist; required)
 }
 
 // LLMConfig selects the active LLM backend.

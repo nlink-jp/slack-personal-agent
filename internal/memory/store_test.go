@@ -156,13 +156,13 @@ func TestUpsertChannel(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	err := s.UpsertChannel(ctx, "WS1", "CH1", "general", false, "topic", "purpose")
+	err := s.UpsertChannel(ctx, "WS1", "CH1", "general", false, 42, "topic", "purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Update same channel
-	err = s.UpsertChannel(ctx, "WS1", "CH1", "general-renamed", false, "new topic", "new purpose")
+	err = s.UpsertChannel(ctx, "WS1", "CH1", "general-renamed", false, 42, "new topic", "new purpose")
 	if err != nil {
 		t.Fatal(err)
 	}
