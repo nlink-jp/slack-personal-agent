@@ -97,6 +97,29 @@ Adopts the 3-tier memory model proven in shell-agent / sai.
 
 All records carry absolute timestamps. Current time is injected into context, enabling the LLM to resolve relative time expressions ("yesterday", "last week", etc.) following the shell-agent pattern.
 
+#### Embedding Abstraction
+
+Text vectorization (embedding generation) is designed as an abstraction layer **completely independent** from the LLM backend.
+
+```
+Embedder interface
+├── BuiltinEmbedder   ← Default. Built-in model (all-MiniLM-L6-v2 etc.)
+├── LocalEmbedder     ← OpenAI-compatible /v1/embeddings API (LM Studio etc.)
+└── VertexAIEmbedder  ← Vertex AI text-embedding-005
+```
+
+**Design rationale:**
+
+- Switching LLM backends does **not trigger re-indexing** (embeddings are independent)
+- Default is built-in model for **zero-config, offline operation**
+- Can be swapped for higher-quality models when needed
+- DB records the `ModelID` used at index time; detects mismatch on startup → prompts re-index
+
+```toml
+[embedding]
+backend = "builtin"  # "builtin" | "local" | "vertex_ai"
+```
+
 #### 3-Tier Knowledge Isolation Model and Channel-Scoped RAG
 
 The fundamental unit in the system is the **channel**. Knowledge scope is managed in three tiers:
@@ -140,7 +163,8 @@ The fundamental unit in the system is the **channel**. Knowledge scope is manage
 | Go + Wails v2 + React | Proven GUI + LLM + DuckDB combination in shell-agent. Keeps architecture simple |
 | User Token (`xoxp-`) | Personal agent operates under user's own permissions. Channel visibility enforced by Slack API |
 | Polling (not Events API) | Socket Mode unavailable for User Tokens. HTTP webhooks unsuitable for local apps. Polling is the only realistic option |
-| LLM Backend interface | Follows data-agent pattern. `Backend` interface switches between local LLM and Vertex AI via config |
+| LLM Backend interface | Follows data-agent pattern. `Backend` interface switches between local LLM and Vertex AI via config. Chat/summarization only |
+| Embedding abstraction (independent of LLM) | Embeddings decoupled from LLM backend. Prevents re-indexing on backend switch. Default is built-in model (zero-config); swappable when needed. ModelID mismatch detection |
 | DuckDB VSS | Proven in lite-rag / gem-rag / shell-agent. Channel ID-filtered vector search is naturally implementable |
 | MITL proxy response | Posting via User Token appears as the user — high risk for automatic posting. Follows shell-agent's approval gate pattern |
 | Per-workspace API queues | Slack API rate limits are independent per workspace. Queues managed per workspace with priority control balancing response quality and API consumption |
@@ -321,3 +345,16 @@ Established channels as the system's fundamental unit, with global knowledge str
 - **Level 3**: Cross-workspace — only knowledge explicitly permitted by the user can be used across workspaces
 
 This design minimizes information leakage risk while allowing progressive expansion of knowledge integration scope as needed.
+
+### Embedding Decoupling from LLM Backend
+
+Initially, embedding generation was part of the LLM backend (local / vertex_ai), but the following issue was identified:
+
+- **Switching LLM backends changes the embedding model, requiring full vector re-indexing**
+- This is unacceptable from a user experience standpoint (hours of rebuilding on each switch)
+
+→ Embeddings are fully decoupled from the LLM backend as an independent `Embedder` interface:
+
+- Default is a built-in model (all-MiniLM-L6-v2 etc.) for zero-config, offline operation
+- Can be swapped to local (OpenAI-compatible API) or Vertex AI when needed
+- DB records `ModelID`; on model change, explicitly prompts for re-index (prevents silent inconsistency)

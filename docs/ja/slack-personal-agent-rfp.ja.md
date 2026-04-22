@@ -97,6 +97,29 @@ shell-agent / sai で実証済みの3層メモリモデルを採用。
 
 全レコードに絶対タイムスタンプを付与。現在時刻をコンテキストに注入し、LLM が相対時間（「昨日」「先週」等）を解決する（shell-agent パターン）。
 
+#### エンベディング抽象化
+
+テキストのベクトル化（エンベディング生成）は LLM バックエンドとは**完全に独立**した抽象化レイヤーとして設計する。
+
+```
+Embedder interface
+├── BuiltinEmbedder   ← デフォルト。内蔵モデル（all-MiniLM-L6-v2 等）
+├── LocalEmbedder     ← OpenAI 互換 /v1/embeddings API（LM Studio 等）
+└── VertexAIEmbedder  ← Vertex AI text-embedding-005
+```
+
+**設計根拠:**
+
+- LLM バックエンドを切り替えても**再 index が発生しない**（エンベディングは独立）
+- デフォルトは内蔵モデルで**ゼロ設定・オフライン動作**
+- 必要に応じてより高品質なモデルに差し替え可能
+- DB にインデックス生成時の `ModelID` を記録し、起動時にモデル不一致を検知 → 再 index を促す
+
+```toml
+[embedding]
+backend = "builtin"  # "builtin" | "local" | "vertex_ai"
+```
+
 #### 3層知識分離モデルとチャネルスコープ RAG
 
 システム内の基本単位は**チャネル**である。知識のスコープは以下の3層で管理する:
@@ -140,7 +163,8 @@ shell-agent / sai で実証済みの3層メモリモデルを採用。
 | Go + Wails v2 + React | shell-agent で GUI + LLM + DuckDB の組み合わせを実証済み。構造をシンプルに保つ |
 | User Token (`xoxp-`) | パーソナルエージェントとしてユーザー自身の権限で動作。チャネル可視性が Slack API 側で自動担保される |
 | ポーリング（Events API ではなく） | User Token では Socket Mode が利用不可。ローカルアプリに HTTP webhook も不適。ポーリングが唯一の現実的選択肢 |
-| LLM Backend インターフェース | data-agent パターンを踏襲。`Backend` インターフェースでローカル LLM と Vertex AI を config で切替 |
+| LLM Backend インターフェース | data-agent パターンを踏襲。`Backend` インターフェースでローカル LLM と Vertex AI を config で切替。チャット/要約専用 |
+| エンベディング抽象化（LLM と独立） | エンベディングを LLM バックエンドから分離。バックエンド切替時の再 index を防止。デフォルトは内蔵モデル（ゼロ設定）、必要に応じて差し替え可能。ModelID で不一致検知 |
 | DuckDB VSS | lite-rag / gem-rag / shell-agent で実績あり。チャネル ID フィルタ付きベクトル検索が自然に実装可能 |
 | MITL 代理応答 | User Token での自動投稿はユーザー本人として投稿されるためリスクが高い。shell-agent の承認ゲートパターンを踏襲 |
 | ワークスペース単位 API キュー | Slack API レート制限はワークスペースごとに独立。キューもワークスペース単位で管理し、優先度制御で応答品質と API 消費のバランスを取る |
@@ -321,3 +345,16 @@ shell-agent が sai の記憶概念を取り込み、さらに時間認識を実
 - **Level 3**: クロスワークスペース — ユーザーが明示的に許可した知識のみワークスペースを越えて利用可能
 
 この設計により、情報漏えいのリスクを最小化しつつ、必要に応じて知識統合の範囲を段階的に拡大できる。
+
+### エンベディングの LLM バックエンドからの分離
+
+当初はエンベディング生成を LLM バックエンド（local / vertex_ai）に含める設計だったが、以下の問題を特定:
+
+- **LLM バックエンドを切り替えるとエンベディングモデルも変わり、全ベクトルの再 index が必要になる**
+- これはユーザー体験として受け入れがたい（切替のたびに数時間の再構築）
+
+→ エンベディングを LLM バックエンドから完全に分離し、独立した `Embedder` インターフェースとして設計:
+
+- デフォルトは内蔵モデル（all-MiniLM-L6-v2 等）でゼロ設定・オフライン動作
+- 必要に応じて local（OpenAI 互換 API）や Vertex AI に差し替え可能
+- DB に `ModelID` を記録し、モデル変更時は明示的に再 index を促す（暗黙の不整合を防ぐ）
