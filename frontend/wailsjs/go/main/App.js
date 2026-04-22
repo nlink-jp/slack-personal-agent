@@ -38,6 +38,10 @@ export function GetWorkspaces() {
   return window['go']['main']['App']['GetWorkspaces']();
 }
 
+export function ListAvailableChannels(arg1, arg2) {
+  return window['go']['main']['App']['ListAvailableChannels'](arg1, arg2);
+}
+
 export function ListKnowledge(arg1) {
   return window['go']['main']['App']['ListKnowledge'](arg1);
 }
@@ -52,6 +56,10 @@ export function RejectProposal(arg1) {
 
 export function SaveConfig(arg1) {
   return window['go']['main']['App']['SaveConfig'](arg1);
+}
+
+export function SetMonitoredChannels(arg1, arg2) {
+  return window['go']['main']['App']['SetMonitoredChannels'](arg1, arg2);
 }
 
 export function SetWorkspaceToken(arg1, arg2) {

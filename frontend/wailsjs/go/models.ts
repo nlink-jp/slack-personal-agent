@@ -212,6 +212,7 @@ export namespace config {
 	}
 	export class WorkspaceConfig {
 	    name: string;
+	    channels: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceConfig(source);
@@ -220,6 +221,7 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.name = source["name"];
+	        this.channels = source["channels"];
 	    }
 	}
 	export class Config {
@@ -340,6 +342,28 @@ export namespace knowledge {
 
 export namespace main {
 	
+	export class ChannelInfo {
+	    id: string;
+	    name: string;
+	    is_private: boolean;
+	    num_members: number;
+	    topic: string;
+	    monitored: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChannelInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.is_private = source["is_private"];
+	        this.num_members = source["num_members"];
+	        this.topic = source["topic"];
+	        this.monitored = source["monitored"];
+	    }
+	}
 	export class QueryResult {
 	    record_id: string;
 	    workspace_id: string;

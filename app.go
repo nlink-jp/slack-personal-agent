@@ -190,9 +190,10 @@ func (a *App) GetWorkspaces() []WorkspaceStatus {
 		}
 		_, polling := a.pollers[ws.Name]
 		result = append(result, WorkspaceStatus{
-			Name:     ws.Name,
-			HasToken: hasToken,
-			Polling:  polling,
+			Name:        ws.Name,
+			HasToken:    hasToken,
+			Polling:     polling,
+			NumChannels: len(ws.Channels),
 		})
 	}
 	return result
@@ -200,9 +201,48 @@ func (a *App) GetWorkspaces() []WorkspaceStatus {
 
 // WorkspaceStatus holds workspace information for the frontend.
 type WorkspaceStatus struct {
-	Name     string `json:"name"`
-	HasToken bool   `json:"has_token"`
-	Polling  bool   `json:"polling"`
+	Name        string `json:"name"`
+	HasToken    bool   `json:"has_token"`
+	Polling     bool   `json:"polling"`
+	NumChannels int    `json:"num_channels"` // Number of monitored channels
+}
+
+// AddWorkspace adds a new workspace to config and saves.
+func (a *App) AddWorkspace(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for _, ws := range a.cfg.Workspaces {
+		if ws.Name == name {
+			return fmt.Errorf("workspace %q already exists", name)
+		}
+	}
+	a.cfg.Workspaces = append(a.cfg.Workspaces, config.WorkspaceConfig{Name: name})
+	return config.Save(a.cfg, config.DefaultConfigPath())
+}
+
+// RemoveWorkspace removes a workspace from config and saves.
+func (a *App) RemoveWorkspace(name string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Stop polling if active
+	if cancel, ok := a.cancelPoll[name]; ok {
+		cancel()
+		delete(a.pollers, name)
+		delete(a.clients, name)
+		delete(a.selfIDs, name)
+		delete(a.cancelPoll, name)
+	}
+
+	filtered := make([]config.WorkspaceConfig, 0, len(a.cfg.Workspaces))
+	for _, ws := range a.cfg.Workspaces {
+		if ws.Name != name {
+			filtered = append(filtered, ws)
+		}
+	}
+	a.cfg.Workspaces = filtered
+	return config.Save(a.cfg, config.DefaultConfigPath())
 }
 
 // SetWorkspaceToken stores a workspace token in the keychain.

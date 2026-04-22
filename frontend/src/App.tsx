@@ -22,18 +22,23 @@ declare global {
           AddKnowledge(title: string, content: string, scope: string, workspaceID: string, tags: string[]): Promise<KnowledgeEntry>;
           UpdateKnowledge(id: string, title: string, content: string, scope: string, workspaceID: string, tags: string[]): Promise<void>;
           DeleteKnowledge(id: string): Promise<void>;
+          AddWorkspace(name: string): Promise<void>;
+          RemoveWorkspace(name: string): Promise<void>;
+          ListAvailableChannels(workspace: string, forceRefresh: boolean): Promise<ChannelInfoRemote[]>;
+          SetMonitoredChannels(workspace: string, channelIDs: string[]): Promise<void>;
         };
       };
     };
   }
 }
 
-interface WorkspaceStatus { name: string; has_token: boolean; polling: boolean; }
+interface WorkspaceStatus { name: string; has_token: boolean; polling: boolean; num_channels: number; }
+interface ChannelInfoRemote { id: string; name: string; is_private: boolean; num_members: number; topic: string; monitored: boolean; }
 interface QueryResult { record_id: string; workspace_id: string; channel_id: string; score: number; }
 interface Proposal { id: string; workspace_name: string; channel_name: string; trigger_text: string; draft_text: string; state: string; created_at: string; }
 interface KnowledgeEntry { id: string; title: string; content: string; scope: string; workspace_id: string; tags: string[]; created_at: string; updated_at: string; }
 
-type Tab = "dashboard" | "query" | "proposals" | "knowledge";
+type Tab = "dashboard" | "query" | "proposals" | "knowledge" | "settings";
 
 function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -71,7 +76,7 @@ function App() {
       </header>
 
       <nav className="tabs">
-        {(["dashboard", "query", "proposals", "knowledge"] as Tab[]).map((t) => (
+        {(["dashboard", "query", "proposals", "knowledge", "settings"] as Tab[]).map((t) => (
           <button key={t} className={`tab ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
@@ -84,6 +89,7 @@ function App() {
       {tab === "query" && <QueryTab setError={setError} />}
       {tab === "proposals" && <ProposalsTab setError={setError} />}
       {tab === "knowledge" && <KnowledgeTab setError={setError} />}
+      {tab === "settings" && <SettingsTab setError={setError} onRefresh={refresh} />}
     </div>
   );
 }
@@ -124,11 +130,13 @@ function DashboardTab({ workspaces, memoryStats, setError, onRefresh }: {
                 <div className="workspace-info">
                   <span className="workspace-name">{ws.name}</span>
                   <span className={`badge ${ws.has_token ? "badge-ok" : "badge-warn"}`}>{ws.has_token ? "Token set" : "No token"}</span>
+                  <span className={`badge ${ws.num_channels > 0 ? "badge-ok" : "badge-warn"}`}>{ws.num_channels} ch</span>
                   <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
                 </div>
                 <div className="workspace-actions">
                   {!ws.has_token && <button onClick={() => { setTokenWs(ws.name); setTokenValue(""); }}>Set Token</button>}
-                  {ws.has_token && !ws.polling && <button onClick={() => handle(() => window.go.main.App.StartPolling(ws.name))}>Start</button>}
+                  {ws.has_token && !ws.polling && ws.num_channels > 0 && <button onClick={() => handle(() => window.go.main.App.StartPolling(ws.name))}>Start</button>}
+                  {ws.has_token && ws.num_channels === 0 && <span className="muted">Select channels in Settings</span>}
                   {ws.has_token && !ws.polling && <button className="btn-muted" onClick={() => { setTokenWs(ws.name); setTokenValue(""); }}>Update Token</button>}
                   {ws.polling && <button onClick={() => handle(() => window.go.main.App.StopPolling(ws.name))}>Stop</button>}
                 </div>
@@ -334,6 +342,115 @@ function KnowledgeTab({ setError }: { setError: (e: string) => void }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SettingsTab({ setError, onRefresh }: { setError: (e: string) => void; onRefresh: () => void }) {
+  const [workspaces, setWorkspaces] = useState<WorkspaceStatus[]>([]);
+  const [newWsName, setNewWsName] = useState("");
+  const [channelWs, setChannelWs] = useState<string | null>(null);
+  const [channels, setChannels] = useState<ChannelInfoRemote[]>([]);
+  const [loadingChannels, setLoadingChannels] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try { setWorkspaces(await window.go.main.App.GetWorkspaces() || []); }
+    catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const handle = async (fn: () => Promise<void>) => {
+    try { setError(""); await fn(); refresh(); onRefresh(); } catch (e: any) { setError(e?.message || String(e)); }
+  };
+
+  const handleAddWs = async () => {
+    if (!newWsName.trim()) return;
+    await handle(async () => {
+      await window.go.main.App.AddWorkspace(newWsName.trim());
+      setNewWsName("");
+    });
+  };
+
+  const handleLoadChannels = async (ws: string) => {
+    setChannelWs(ws);
+    setLoadingChannels(true);
+    try {
+      const chs = await window.go.main.App.ListAvailableChannels(ws, false);
+      setChannels(chs || []);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    }
+    setLoadingChannels(false);
+  };
+
+  const handleToggleChannel = (chId: string) => {
+    setChannels((prev) =>
+      prev.map((ch) => ch.id === chId ? { ...ch, monitored: !ch.monitored } : ch)
+    );
+  };
+
+  const handleSaveChannels = async () => {
+    if (!channelWs) return;
+    const selected = channels.filter((ch) => ch.monitored).map((ch) => ch.id);
+    await handle(async () => {
+      await window.go.main.App.SetMonitoredChannels(channelWs, selected);
+      setChannelWs(null);
+      setChannels([]);
+    });
+  };
+
+  return (
+    <section className="section">
+      <h2>Settings</h2>
+
+      <div className="subsection">
+        <h3>Workspaces</h3>
+        <div className="form-row" style={{ marginBottom: 12 }}>
+          <input placeholder="Workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAddWs()} />
+          <button className="btn-approve" onClick={handleAddWs}>Add Workspace</button>
+        </div>
+
+        {workspaces.map((ws) => (
+          <div key={ws.name} className="workspace-card">
+            <div className="workspace-info">
+              <span className="workspace-name">{ws.name}</span>
+              <span className={`badge ${ws.num_channels > 0 ? "badge-ok" : "badge-warn"}`}>{ws.num_channels} channels</span>
+            </div>
+            <div className="workspace-actions">
+              <button onClick={() => handleLoadChannels(ws.name)}>Select Channels</button>
+              <button className="btn-reject" onClick={() => handle(() => window.go.main.App.RemoveWorkspace(ws.name))}>Remove</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {channelWs && (
+        <div className="subsection">
+          <div className="section-header">
+            <h3>Channels for {channelWs}</h3>
+            <div className="workspace-actions">
+              <button className="btn-approve" onClick={handleSaveChannels}>Save Selection</button>
+              <button onClick={() => { setChannelWs(null); setChannels([]); }}>Cancel</button>
+            </div>
+          </div>
+          {loadingChannels ? (
+            <p className="muted">Loading channels...</p>
+          ) : (
+            <div className="channel-list">
+              {channels.map((ch) => (
+                <label key={ch.id} className="channel-item">
+                  <input type="checkbox" checked={ch.monitored} onChange={() => handleToggleChannel(ch.id)} />
+                  <span className="channel-name">#{ch.name}</span>
+                  {ch.is_private && <span className="badge badge-warn">private</span>}
+                  <span className="muted">{ch.num_members} members</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>

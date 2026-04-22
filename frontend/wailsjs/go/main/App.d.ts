@@ -23,6 +23,8 @@ export function GetTimeContext():Promise<string>;
 
 export function GetWorkspaces():Promise<Array<main.WorkspaceStatus>>;
 
+export function ListAvailableChannels(arg1:string,arg2:boolean):Promise<Array<main.ChannelInfo>>;
+
 export function ListKnowledge(arg1:string):Promise<Array<knowledge.Entry>>;
 
 export function Query(arg1:string,arg2:string,arg3:string):Promise<Array<main.QueryResult>>;
@@ -30,6 +32,8 @@ export function Query(arg1:string,arg2:string,arg3:string):Promise<Array<main.Qu
 export function RejectProposal(arg1:string):Promise<void>;
 
 export function SaveConfig(arg1:config.Config):Promise<void>;
+
+export function SetMonitoredChannels(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function SetWorkspaceToken(arg1:string,arg2:string):Promise<void>;
 
