@@ -16,6 +16,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
 	"github.com/nlink-jp/slack-personal-agent/internal/slack"
+	"github.com/nlink-jp/slack-personal-agent/internal/timectx"
 )
 
 // App holds the application state and provides Wails bindings.
@@ -118,6 +119,12 @@ func (a *App) shutdown(_ context.Context) {
 // Version returns the application version.
 func (a *App) Version() string {
 	return version
+}
+
+// GetTimeContext returns the full calendar context for LLM prompts.
+// Includes date, time, timezone, day of week, ISO week number.
+func (a *App) GetTimeContext() string {
+	return timectx.Now()
 }
 
 // GetConfig returns the current configuration (without secrets).
