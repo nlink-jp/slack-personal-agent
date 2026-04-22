@@ -386,6 +386,10 @@ export namespace main {
 	    record_id: string;
 	    workspace_id: string;
 	    channel_id: string;
+	    channel_name: string;
+	    user_name: string;
+	    content: string;
+	    ts: string;
 	    score: number;
 	
 	    static createFrom(source: any = {}) {
@@ -397,6 +401,10 @@ export namespace main {
 	        this.record_id = source["record_id"];
 	        this.workspace_id = source["workspace_id"];
 	        this.channel_id = source["channel_id"];
+	        this.channel_name = source["channel_name"];
+	        this.user_name = source["user_name"];
+	        this.content = source["content"];
+	        this.ts = source["ts"];
 	        this.score = source["score"];
 	    }
 	}
