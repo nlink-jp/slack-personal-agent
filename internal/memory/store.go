@@ -107,11 +107,13 @@ func (s *Store) migrate() error {
 		return err
 	}
 
-	// Schema migrations for existing databases
+	// Schema migrations for existing databases.
+	// DuckDB ALTER TABLE ADD COLUMN does not support NOT NULL constraints,
+	// so columns are added without constraints here.
 	migrations := []string{
-		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS num_members INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS cached_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`,
-		`ALTER TABLE records ADD COLUMN IF NOT EXISTS author_type VARCHAR NOT NULL DEFAULT 'other'`,
+		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS num_members INTEGER DEFAULT 0`,
+		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
+		`ALTER TABLE records ADD COLUMN IF NOT EXISTS author_type VARCHAR DEFAULT 'other'`,
 	}
 	for _, m := range migrations {
 		s.db.Exec(m) // Ignore errors (column may already exist)
