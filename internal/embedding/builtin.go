@@ -89,7 +89,9 @@ func (e *BuiltinEmbedder) ensureInitialized(ctx context.Context) error {
 	modelPath := filepath.Join(e.modelDir, "all-MiniLM-L6-v2")
 	if _, err := os.Stat(filepath.Join(modelPath, "tokenizer.json")); os.IsNotExist(err) {
 		log.Printf("Downloading embedding model %s...", builtinModel)
-		downloaded, err := hugot.DownloadModel(ctx, builtinModel, e.modelDir, hugot.NewDownloadOptions())
+		opts := hugot.NewDownloadOptions()
+		opts.OnnxFilePath = "onnx/model.onnx" // Select base model (repo has multiple variants)
+		downloaded, err := hugot.DownloadModel(ctx, builtinModel, e.modelDir, opts)
 		if err != nil {
 			return fmt.Errorf("download model: %w", err)
 		}
