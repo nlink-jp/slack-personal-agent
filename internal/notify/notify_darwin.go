@@ -34,9 +34,14 @@ func SendWithSubtitle(ctx context.Context, title, subtitle, body string) error {
 	return cmd.Run()
 }
 
-// appleScriptString escapes a string for AppleScript.
+// appleScriptString escapes a string for safe AppleScript embedding.
+// Neutralizes newlines, carriage returns, tabs, backslashes, and quotes
+// to prevent command injection via crafted Slack messages.
 func appleScriptString(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
 	return `"` + s + `"`
 }

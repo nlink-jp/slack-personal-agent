@@ -10,6 +10,9 @@ func TestAppleScriptString(t *testing.T) {
 		{"hello", `"hello"`},
 		{`say "hi"`, `"say \"hi\""`},
 		{`path\to\file`, `"path\\to\\file"`},
+		{"line1\nline2", `"line1 line2"`},
+		{"inject\r\ndo shell script", `"inject  do shell script"`},
+		{"tab\there", `"tab here"`},
 		{"", `""`},
 	}
 	for _, tt := range tests {

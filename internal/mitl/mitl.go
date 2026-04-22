@@ -189,11 +189,12 @@ func (m *Manager) watchTimeout(ctx context.Context, id string) {
 	if ok && p.State == StatePending {
 		p.State = StateExpired
 		p.ResolvedAt = time.Now()
-		if m.OnExpire != nil {
-			m.mu.Unlock()
-			m.OnExpire(p)
-			return
-		}
 	}
+	onExpire := m.OnExpire
 	m.mu.Unlock()
+
+	// Call callback outside lock to prevent deadlock
+	if ok && p.State == StateExpired && onExpire != nil {
+		onExpire(p)
+	}
 }

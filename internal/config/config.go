@@ -48,7 +48,7 @@ type VertexAIConfig struct {
 type LocalLLMConfig struct {
 	Endpoint string `toml:"endpoint" json:"endpoint"`
 	Model    string `toml:"model" json:"model"`
-	APIKey   string `toml:"api_key" json:"api_key"`
+	APIKey   string `toml:"api_key" json:"-"` // Never expose to frontend
 }
 
 // EmbeddingConfig selects the embedding backend.
@@ -63,7 +63,7 @@ type EmbeddingConfig struct {
 type EmbeddingLocalConfig struct {
 	Endpoint string `toml:"endpoint" json:"endpoint"`
 	Model    string `toml:"model" json:"model"`
-	APIKey   string `toml:"api_key" json:"api_key"`
+	APIKey   string `toml:"api_key" json:"-"` // Never expose to frontend
 }
 
 // EmbeddingVertexAIConfig holds settings for Vertex AI embedding.

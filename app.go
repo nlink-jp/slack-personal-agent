@@ -33,18 +33,20 @@ type App struct {
 	keys      keychain.Store
 	kb        *knowledge.Store
 	mitlMgr   *mitl.Manager
-	clients   map[string]*slack.Client // workspace → client for posting
-	selfIDs   map[string]string        // workspace → authenticated user ID
-	pollers   map[string]*slack.WorkspacePoller
-	mu        sync.Mutex
+	clients    map[string]*slack.Client       // workspace → client for posting
+	selfIDs    map[string]string              // workspace → authenticated user ID
+	pollers    map[string]*slack.WorkspacePoller
+	cancelPoll map[string]context.CancelFunc  // workspace → cancel function for polling goroutines
+	mu         sync.Mutex
 }
 
 // NewApp creates a new App instance.
 func NewApp() *App {
 	return &App{
-		pollers: make(map[string]*slack.WorkspacePoller),
-		clients: make(map[string]*slack.Client),
-		selfIDs: make(map[string]string),
+		pollers:    make(map[string]*slack.WorkspacePoller),
+		clients:    make(map[string]*slack.Client),
+		selfIDs:    make(map[string]string),
+		cancelPoll: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -246,9 +248,13 @@ func (a *App) StartPolling(workspace string) error {
 	a.pollers[workspace] = poller
 	a.clients[workspace] = client
 
+	// Per-workspace context for clean cancellation
+	wsCtx, wsCancel := context.WithCancel(a.ctx)
+	a.cancelPoll[workspace] = wsCancel
+
 	// Start scheduler and poller in background
-	go scheduler.Run(a.ctx)
-	go poller.Run(a.ctx)
+	go scheduler.Run(wsCtx)
+	go poller.Run(wsCtx)
 
 	log.Printf("Started polling %q (%d channels)", workspace, len(channelIDs))
 	return nil
@@ -259,11 +265,15 @@ func (a *App) StopPolling(workspace string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if _, exists := a.pollers[workspace]; !exists {
+	cancel, exists := a.cancelPoll[workspace]
+	if !exists {
 		return fmt.Errorf("not polling workspace %q", workspace)
 	}
-	// Poller will stop when context is cancelled
+	cancel() // Cancel the per-workspace context, stopping scheduler + poller goroutines
 	delete(a.pollers, workspace)
+	delete(a.clients, workspace)
+	delete(a.selfIDs, workspace)
+	delete(a.cancelPoll, workspace)
 	return nil
 }
 
@@ -418,11 +428,13 @@ func (a *App) UpdateKnowledge(id, title, content, scope, workspaceID string, tag
 	a.retriever.DeleteByRecord(a.ctx, id)
 	entry, err := a.kb.Get(a.ctx, id)
 	if err != nil {
-		return nil
+		return fmt.Errorf("get knowledge for re-index: %w", err)
 	}
 	ragWS, ragCH := knowledgeRAGScope(entry)
 	embID := "kb-" + entry.ID
-	a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content)
+	if err := a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content); err != nil {
+		log.Printf("Warning: failed to re-index knowledge %q: %v", id, err)
+	}
 	return nil
 }
 

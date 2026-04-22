@@ -6,6 +6,7 @@ package knowledge
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -82,10 +83,7 @@ func (s *Store) Add(ctx context.Context, title, content string, scope Scope, wor
 		UpdatedAt:   time.Now(),
 	}
 
-	tagsJSON := "[]"
-	if len(tags) > 0 {
-		tagsJSON = `["` + strings.Join(tags, `","`) + `"]`
-	}
+	tagsJSON := marshalTags(tags)
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO knowledge (id, title, content, scope, workspace_id, tags, created_at, updated_at)
@@ -99,10 +97,7 @@ func (s *Store) Add(ctx context.Context, title, content string, scope Scope, wor
 
 // Update modifies an existing knowledge entry.
 func (s *Store) Update(ctx context.Context, id, title, content string, scope Scope, workspaceID string, tags []string) error {
-	tagsJSON := "[]"
-	if len(tags) > 0 {
-		tagsJSON = `["` + strings.Join(tags, `","`) + `"]`
-	}
+	tagsJSON := marshalTags(tags)
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE knowledge SET title = ?, content = ?, scope = ?, workspace_id = ?,
@@ -214,14 +209,21 @@ func scanEntry(row *sql.Row) (*Entry, error) {
 	return &e, nil
 }
 
+func marshalTags(tags []string) string {
+	if len(tags) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(tags)
+	return string(b)
+}
+
 func parseTags(s string) []string {
 	if s == "" || s == "[]" {
 		return nil
 	}
-	s = strings.TrimPrefix(s, `["`)
-	s = strings.TrimSuffix(s, `"]`)
-	if s == "" {
+	var tags []string
+	if err := json.Unmarshal([]byte(s), &tags); err != nil {
 		return nil
 	}
-	return strings.Split(s, `","`)
+	return tags
 }

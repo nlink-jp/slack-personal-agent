@@ -84,7 +84,7 @@ func TestDownloader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d := NewDownloader()
+	d := NewDownloaderForTest()
 	ctx := context.Background()
 
 	data, err := d.Download(ctx, server.URL, "test-token")
@@ -102,10 +102,19 @@ func TestDownloaderUnauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d := NewDownloader()
+	d := NewDownloaderForTest()
 	_, err := d.Download(context.Background(), server.URL, "bad-token")
 	if err == nil {
 		t.Error("expected error for unauthorized response")
+	}
+}
+
+func TestDownloaderRejectsNonSlackHost(t *testing.T) {
+	d := NewDownloader() // Production downloader (strict host check)
+
+	_, err := d.Download(context.Background(), "https://evil.example.com/steal", "xoxp-secret")
+	if err == nil {
+		t.Error("expected error for non-Slack host")
 	}
 }
 
@@ -115,7 +124,7 @@ func TestProcessFile(t *testing.T) {
 	}))
 	defer server.Close()
 
-	d := NewDownloader()
+	d := NewDownloaderForTest()
 	e := NewExtractor()
 	ctx := context.Background()
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -40,21 +41,40 @@ type File struct {
 
 // Downloader handles authenticated file downloads from Slack.
 type Downloader struct {
-	httpClient *http.Client
+	httpClient   *http.Client
+	allowedHosts map[string]bool // Hosts that may receive the Bearer token
 }
 
 // NewDownloader creates a new file downloader.
+// Only sends tokens to files.slack.com by default.
 func NewDownloader() *Downloader {
 	return &Downloader{
 		httpClient: &http.Client{
 			Timeout: 2 * time.Minute,
 		},
+		allowedHosts: map[string]bool{"files.slack.com": true},
+	}
+}
+
+// NewDownloaderForTest creates a downloader that allows any host (testing only).
+func NewDownloaderForTest() *Downloader {
+	return &Downloader{
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 // Download fetches a file from Slack using the User Token for authentication.
-func (d *Downloader) Download(ctx context.Context, url, token string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// Only sends the token to allowed hosts to prevent token leakage.
+func (d *Downloader) Download(ctx context.Context, rawURL, token string) ([]byte, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if d.allowedHosts != nil && !d.allowedHosts[parsed.Host] {
+		return nil, fmt.Errorf("refusing to send token to non-Slack host: %s", parsed.Host)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

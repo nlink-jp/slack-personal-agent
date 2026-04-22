@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nlink-jp/slack-personal-agent/internal/config"
@@ -18,7 +19,7 @@ type LocalEmbedder struct {
 	endpoint   string
 	model      string
 	apiKey     string
-	dimensions int
+	dimensions atomic.Int32
 	httpClient *http.Client
 }
 
@@ -35,11 +36,11 @@ func NewLocalEmbedder(cfg config.EmbeddingLocalConfig) *LocalEmbedder {
 }
 
 func (e *LocalEmbedder) ModelID() string {
-	return fmt.Sprintf("local:%s:%d", e.model, e.dimensions)
+	return fmt.Sprintf("local:%s:%d", e.model, e.dimensions.Load())
 }
 
 func (e *LocalEmbedder) Dimensions() int {
-	return e.dimensions
+	return int(e.dimensions.Load())
 }
 
 // Embed generates embeddings via the OpenAI-compatible /v1/embeddings endpoint.
@@ -86,9 +87,9 @@ func (e *LocalEmbedder) Embed(ctx context.Context, texts []string) ([][]float32,
 	result := make([][]float32, len(embResp.Data))
 	for i, d := range embResp.Data {
 		result[i] = d.Embedding
-		// Auto-detect dimensions from first response
-		if e.dimensions == 0 && len(d.Embedding) > 0 {
-			e.dimensions = len(d.Embedding)
+		// Auto-detect dimensions from first response (atomic for concurrent safety)
+		if e.dimensions.Load() == 0 && len(d.Embedding) > 0 {
+			e.dimensions.CompareAndSwap(0, int32(len(d.Embedding)))
 		}
 	}
 
