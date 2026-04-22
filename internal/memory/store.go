@@ -103,8 +103,21 @@ func (s *Store) migrate() error {
 			PRIMARY KEY (workspace_id, user_id)
 		);
 	`
-	_, err := s.db.Exec(ddl)
-	return err
+	if _, err := s.db.Exec(ddl); err != nil {
+		return err
+	}
+
+	// Schema migrations for existing databases
+	migrations := []string{
+		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS num_members INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE channels ADD COLUMN IF NOT EXISTS cached_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+		`ALTER TABLE records ADD COLUMN IF NOT EXISTS author_type VARCHAR NOT NULL DEFAULT 'other'`,
+	}
+	for _, m := range migrations {
+		s.db.Exec(m) // Ignore errors (column may already exist)
+	}
+
+	return nil
 }
 
 // InsertRecord inserts a new memory record, skipping if a record with the same ID already exists.
