@@ -92,8 +92,23 @@ function DashboardTab({ workspaces, memoryStats, setError, onRefresh }: {
   workspaces: WorkspaceStatus[]; memoryStats: Record<string, number>;
   setError: (e: string) => void; onRefresh: () => void;
 }) {
+  const [tokenWs, setTokenWs] = useState<string | null>(null);
+  const [tokenValue, setTokenValue] = useState("");
+
   const handle = async (fn: () => Promise<void>) => {
     try { setError(""); await fn(); onRefresh(); } catch (e: any) { setError(e?.message || String(e)); }
+  };
+
+  const handleSaveToken = async (ws: string) => {
+    if (!tokenValue.startsWith("xoxp-")) {
+      setError("Token must start with xoxp-");
+      return;
+    }
+    await handle(async () => {
+      await window.go.main.App.SetWorkspaceToken(ws, tokenValue);
+      setTokenWs(null);
+      setTokenValue("");
+    });
   };
 
   return (
@@ -112,9 +127,25 @@ function DashboardTab({ workspaces, memoryStats, setError, onRefresh }: {
                   <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
                 </div>
                 <div className="workspace-actions">
+                  {!ws.has_token && <button onClick={() => { setTokenWs(ws.name); setTokenValue(""); }}>Set Token</button>}
                   {ws.has_token && !ws.polling && <button onClick={() => handle(() => window.go.main.App.StartPolling(ws.name))}>Start</button>}
+                  {ws.has_token && !ws.polling && <button className="btn-muted" onClick={() => { setTokenWs(ws.name); setTokenValue(""); }}>Update Token</button>}
                   {ws.polling && <button onClick={() => handle(() => window.go.main.App.StopPolling(ws.name))}>Stop</button>}
                 </div>
+                {tokenWs === ws.name && (
+                  <div className="token-form">
+                    <input
+                      type="password"
+                      placeholder="xoxp-..."
+                      value={tokenValue}
+                      onChange={(e) => setTokenValue(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveToken(ws.name)}
+                      autoFocus
+                    />
+                    <button className="btn-approve" onClick={() => handleSaveToken(ws.name)}>Save to Keychain</button>
+                    <button onClick={() => setTokenWs(null)}>Cancel</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

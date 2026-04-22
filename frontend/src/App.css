@@ -142,6 +142,50 @@ body {
   background: var(--border);
 }
 
+.btn-muted {
+  opacity: 0.6;
+}
+
+.btn-muted:hover {
+  opacity: 1;
+}
+
+/* Token input form */
+.token-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.token-form input {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-family: "SF Mono", "Menlo", monospace;
+}
+
+.token-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.token-form button {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 /* Memory stats */
 .stats-grid {
   display: flex;
