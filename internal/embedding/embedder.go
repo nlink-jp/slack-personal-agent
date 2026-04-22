@@ -29,8 +29,7 @@ type Embedder interface {
 func NewEmbedder(cfg *config.Config) (Embedder, error) {
 	switch cfg.Embedding.Backend {
 	case "builtin":
-		// TODO: Implement builtin embedder (Hugot + all-MiniLM-L6-v2)
-		return nil, fmt.Errorf("builtin embedder not yet implemented; use 'local' or 'vertex_ai'")
+		return NewBuiltinEmbedder("")
 	case "local":
 		return NewLocalEmbedder(cfg.Embedding.Local), nil
 	case "vertex_ai":

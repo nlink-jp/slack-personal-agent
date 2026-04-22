@@ -61,13 +61,22 @@ func TestNewEmbedderLocal(t *testing.T) {
 	}
 }
 
-func TestNewEmbedderBuiltinNotYetImplemented(t *testing.T) {
+func TestNewEmbedderBuiltin(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Embedding.Backend = "builtin"
 
-	_, err := NewEmbedder(cfg)
-	if err == nil {
-		t.Error("expected error for not-yet-implemented builtin")
+	emb, err := NewEmbedder(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emb == nil {
+		t.Fatal("expected non-nil embedder")
+	}
+	if emb.Dimensions() != 384 {
+		t.Errorf("expected 384 dimensions, got %d", emb.Dimensions())
+	}
+	if emb.ModelID() != "builtin:sentence-transformers/all-MiniLM-L6-v2:384" {
+		t.Errorf("unexpected model ID: %q", emb.ModelID())
 	}
 }
 
@@ -96,3 +105,4 @@ func TestLocalEmbedderModelID(t *testing.T) {
 // Compile-time interface checks
 var _ Embedder = (*LocalEmbedder)(nil)
 var _ Embedder = (*MockEmbedder)(nil)
+var _ Embedder = (*BuiltinEmbedder)(nil)
