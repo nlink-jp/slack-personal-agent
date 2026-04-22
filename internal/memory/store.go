@@ -361,6 +361,15 @@ func (s *Store) UpsertUser(ctx context.Context, workspaceID, userID, userName, r
 	return err
 }
 
+// GetCachedChannelName returns the cached channel name, or empty string if not cached.
+func (s *Store) GetCachedChannelName(ctx context.Context, workspaceID, channelID string) string {
+	var name string
+	s.db.QueryRowContext(ctx,
+		`SELECT channel_name FROM channels WHERE workspace_id = ? AND channel_id = ?`,
+		workspaceID, channelID).Scan(&name)
+	return name
+}
+
 // GetCachedUserName returns the cached user name, or empty string if not cached.
 func (s *Store) GetCachedUserName(ctx context.Context, workspaceID, userID string) string {
 	var name string

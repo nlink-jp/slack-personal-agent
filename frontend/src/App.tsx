@@ -25,7 +25,7 @@ declare global {
           StartPolling(workspace: string): Promise<void>;
           StopPolling(workspace: string): Promise<void>;
           SetWorkspaceToken(workspace: string, token: string): Promise<void>;
-          Query(workspaceID: string, channelID: string, question: string): Promise<QueryResult[]>;
+          Query(workspaceID: string, channelID: string, question: string): Promise<QueryResponseType>;
           GetPendingProposals(): Promise<Proposal[]>;
           ApproveProposal(id: string): Promise<void>;
           RejectProposal(id: string): Promise<void>;
@@ -378,16 +378,23 @@ function SettingsTab({ setError, onRefresh }: { setError: (e: string) => void; o
 
 // ── Query ──────────────────────────────────────────────
 
+interface QueryResponseType { answer: string; sources: QueryResult[]; }
+
 function QueryTab({ setError }: { setError: (e: string) => void }) {
   const [queryWs, setQueryWs] = useState("");
   const [queryCh, setQueryCh] = useState("");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<QueryResult[]>([]);
+  const [response, setResponse] = useState<QueryResponseType | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const handleQuery = async () => {
     if (!queryWs || !queryCh || !query) return;
-    try { setError(""); setResults(await window.go.main.App.Query(queryWs, queryCh, query) || []); }
-    catch (e: any) { setError(e?.message || String(e)); }
+    try {
+      setError(""); setLoading(true);
+      const resp = await window.go.main.App.Query(queryWs, queryCh, query);
+      setResponse(resp);
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -397,11 +404,20 @@ function QueryTab({ setError }: { setError: (e: string) => void }) {
         <input {...inputProps} placeholder="Workspace ID" value={queryWs} onChange={(e) => setQueryWs(e.target.value)} />
         <input {...inputProps} placeholder="Channel ID" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
         <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleQuery()} />
-        <button onClick={handleQuery}>Search</button>
+        <button onClick={handleQuery} disabled={loading}>{loading ? "Thinking..." : "Ask"}</button>
       </div>
-      {results.length > 0 && (
+
+      {response?.answer && (
+        <div className="answer-card">
+          <h3>Answer</h3>
+          <div className="answer-text">{response.answer}</div>
+        </div>
+      )}
+
+      {response?.sources && response.sources.length > 0 && (
         <div className="results">
-          {results.map((r, i) => (
+          <h3>Sources</h3>
+          {response.sources.map((r, i) => (
             <div key={i} className="result-card">
               <div className="result-meta">
                 <span>{r.workspace_id} / {r.channel_id}</span>

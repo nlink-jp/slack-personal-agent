@@ -22,6 +22,10 @@ export function EditAndApproveProposal(arg1, arg2) {
   return window['go']['main']['App']['EditAndApproveProposal'](arg1, arg2);
 }
 
+export function GetChannelStats(arg1) {
+  return window['go']['main']['App']['GetChannelStats'](arg1);
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }

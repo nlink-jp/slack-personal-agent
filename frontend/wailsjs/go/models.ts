@@ -364,6 +364,24 @@ export namespace main {
 	        this.monitored = source["monitored"];
 	    }
 	}
+	export class ChannelStatsInfo {
+	    channel_id: string;
+	    channel_name: string;
+	    msg_count: number;
+	    last_ts: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChannelStatsInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.channel_id = source["channel_id"];
+	        this.channel_name = source["channel_name"];
+	        this.msg_count = source["msg_count"];
+	        this.last_ts = source["last_ts"];
+	    }
+	}
 	export class QueryResult {
 	    record_id: string;
 	    workspace_id: string;
