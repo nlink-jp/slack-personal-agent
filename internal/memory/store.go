@@ -147,12 +147,19 @@ func (s *Store) GetRecord(ctx context.Context, id string) (*Record, error) {
 	return &r, nil
 }
 
+// InsertRecord inserts a new memory record, skipping if already exists.
 func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
-	// Check for existing record to prevent duplicates (e.g., after restart)
+	_, err := s.InsertRecordIfNew(ctx, r)
+	return err
+}
+
+// InsertRecordIfNew inserts a new record and returns true if it was actually inserted.
+// Returns false if the record already existed (duplicate).
+func (s *Store) InsertRecordIfNew(ctx context.Context, r *Record) (bool, error) {
 	var count int
 	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM records WHERE id = ?`, r.ID).Scan(&count)
 	if count > 0 {
-		return nil // Already exists, skip
+		return false, nil
 	}
 
 	_, err := s.db.ExecContext(ctx, `
@@ -165,7 +172,10 @@ func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
 		r.IsSummary, marshalSummaryOf(r.SummaryOf), nullTime(r.SummaryFrom), nullTime(r.SummaryTo),
 		r.CreatedAt, r.EmbeddingID,
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // FindByChannel returns records for a specific channel, ordered by creation time.

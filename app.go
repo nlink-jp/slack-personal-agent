@@ -822,6 +822,8 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 		"unpinned_item":   true,
 	}
 
+	var newMessages []slack.Message // Only truly new messages (not already in DB)
+
 	for _, msg := range messages {
 		if skipSubtypes[msg.SubType] {
 			continue
@@ -835,7 +837,6 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 		if msg.User != "" {
 			userName = a.store.GetCachedUserName(a.ctx, workspaceName, msg.User)
 			if userName == "" {
-				// Background resolve — don't block message processing
 				go a.resolveAndCacheUser(workspaceName, msg.User)
 			}
 		}
@@ -855,15 +856,20 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 			CreatedAt:     time.Now(),
 		}
 
-		if err := a.store.InsertRecord(a.ctx, record); err != nil {
+		inserted, err := a.store.InsertRecordIfNew(a.ctx, record)
+		if err != nil {
 			a.log.Error("inserting record: %v", err)
 			continue
 		}
 
-		// Index for RAG
-		embID := record.ID + "-emb"
-		if err := a.retriever.Index(a.ctx, embID, record.ID, workspaceName, channelID, msg.Text); err != nil {
-			a.log.Error("indexing record: %v", err)
+		if inserted {
+			newMessages = append(newMessages, msg)
+
+			// Index for RAG
+			embID := record.ID + "-emb"
+			if err := a.retriever.Index(a.ctx, embID, record.ID, workspaceName, channelID, msg.Text); err != nil {
+				a.log.Error("indexing record: %v", err)
+			}
 		}
 	}
 
@@ -873,14 +879,10 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 		a.store.UpdateChannelPolled(a.ctx, workspaceName, channelID, latestTs)
 	}
 
-	// Run agent pipeline only for small batches of new messages.
-	// Large batches (>20) indicate initial fetch or catch-up — store only, don't evaluate.
-	// This prevents flooding the LLM with evaluation requests on startup.
-	const maxEvalBatch = 20
-	if len(messages) <= maxEvalBatch && len(messages) > 0 {
-		go a.runAgentPipeline(workspaceName, channelID, messages)
-	} else if len(messages) > maxEvalBatch {
-		a.log.Debug("skipping agent eval for %s/%s: batch too large (%d msgs, threshold %d)", workspaceName, channelID, len(messages), maxEvalBatch)
+	// Run agent pipeline only on genuinely new messages
+	if len(newMessages) > 0 {
+		a.log.Debug("new messages for agent: %s/%s: %d new of %d total", workspaceName, channelID, len(newMessages), len(messages))
+		go a.runAgentPipeline(workspaceName, channelID, newMessages)
 	}
 }
 
