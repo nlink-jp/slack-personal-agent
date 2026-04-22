@@ -12,6 +12,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/embedding"
 	"github.com/nlink-jp/slack-personal-agent/internal/keychain"
 	"github.com/nlink-jp/slack-personal-agent/internal/llm"
+	"github.com/nlink-jp/slack-personal-agent/internal/knowledge"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
@@ -28,6 +29,7 @@ type App struct {
 	backend   llm.Backend
 	embedder  embedding.Embedder
 	keys      keychain.Store
+	kb        *knowledge.Store
 	mitlMgr   *mitl.Manager
 	clients   map[string]*slack.Client // workspace → client for posting
 	pollers   map[string]*slack.WorkspacePoller
@@ -88,6 +90,13 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("Error: RAG migration failed: %v", err)
 	}
 	a.retriever = retriever
+
+	// Initialize knowledge base
+	kb := knowledge.NewStore(store.DB())
+	if err := kb.Migrate(); err != nil {
+		log.Printf("Error: knowledge migration failed: %v", err)
+	}
+	a.kb = kb
 
 	// Initialize MITL manager
 	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
@@ -238,10 +247,20 @@ func (a *App) StopPolling(workspace string) error {
 }
 
 // Query performs a channel-scoped RAG query.
+// Resolves scope groups from config and includes knowledge base entries.
 func (a *App) Query(workspaceID, channelID, question string) ([]QueryResult, error) {
-	scope := rag.SearchScope{
-		WorkspaceID: workspaceID,
-		ChannelID:   channelID,
+	// Build scope from config groups (Level 2/3 permissions)
+	scope := rag.BuildScope(workspaceID, channelID, a.cfg.Scopes)
+
+	// Include workspace-scoped knowledge (__knowledge__ channel)
+	scope.CrossChannelIDs = append(scope.CrossChannelIDs, "__knowledge__")
+
+	// Include global knowledge if any cross-workspace scope exists
+	if len(scope.CrossWorkspaces) > 0 {
+		scope.CrossWorkspaces = append(scope.CrossWorkspaces, rag.WorkspaceScope{
+			WorkspaceID: "__global__",
+			ChannelIDs:  []string{"__knowledge__"},
+		})
 	}
 
 	results, err := a.retriever.Search(a.ctx, question, scope, 10)
@@ -338,6 +357,68 @@ func (a *App) EditAndApproveProposal(id, editedText string) error {
 		return fmt.Errorf("proposal %q not found", id)
 	}
 	return a.ApproveProposal(id)
+}
+
+// ── Knowledge Base ──────────────────────────────────────
+
+// AddKnowledge adds a new knowledge entry and indexes it for RAG.
+func (a *App) AddKnowledge(title, content, scope, workspaceID string, tags []string) (*knowledge.Entry, error) {
+	entry, err := a.kb.Add(a.ctx, title, content, knowledge.Scope(scope), workspaceID, tags)
+	if err != nil {
+		return nil, err
+	}
+
+	// Index for RAG — knowledge uses a synthetic workspace/channel for scoping
+	ragWS, ragCH := knowledgeRAGScope(entry)
+	embID := "kb-" + entry.ID
+	if err := a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content); err != nil {
+		log.Printf("Warning: failed to index knowledge %q: %v", entry.ID, err)
+	}
+
+	return entry, nil
+}
+
+// ListKnowledge returns all knowledge entries, optionally filtered by scope.
+func (a *App) ListKnowledge(scope string) ([]knowledge.Entry, error) {
+	if scope == "" {
+		return a.kb.List(a.ctx, nil)
+	}
+	s := knowledge.Scope(scope)
+	return a.kb.List(a.ctx, &s)
+}
+
+// UpdateKnowledge updates a knowledge entry and re-indexes it.
+func (a *App) UpdateKnowledge(id, title, content, scope, workspaceID string, tags []string) error {
+	if err := a.kb.Update(a.ctx, id, title, content, knowledge.Scope(scope), workspaceID, tags); err != nil {
+		return err
+	}
+
+	// Re-index: delete old embedding, create new
+	a.retriever.DeleteByRecord(a.ctx, id)
+	entry, err := a.kb.Get(a.ctx, id)
+	if err != nil {
+		return nil
+	}
+	ragWS, ragCH := knowledgeRAGScope(entry)
+	embID := "kb-" + entry.ID
+	a.retriever.Index(a.ctx, embID, entry.ID, ragWS, ragCH, entry.Content)
+	return nil
+}
+
+// DeleteKnowledge deletes a knowledge entry and its embedding.
+func (a *App) DeleteKnowledge(id string) error {
+	a.retriever.DeleteByRecord(a.ctx, id)
+	return a.kb.Delete(a.ctx, id)
+}
+
+// knowledgeRAGScope returns synthetic workspace/channel IDs for RAG indexing.
+// Global knowledge uses "__global__" workspace, workspace-scoped uses the workspace ID.
+// This allows RAG scope filters to include knowledge entries naturally.
+func knowledgeRAGScope(e *knowledge.Entry) (workspaceID, channelID string) {
+	if e.Scope == knowledge.ScopeGlobal {
+		return "__global__", "__knowledge__"
+	}
+	return e.WorkspaceID, "__knowledge__"
 }
 
 // handleMessages processes new messages from a workspace poller.
