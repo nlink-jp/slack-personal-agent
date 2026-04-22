@@ -157,6 +157,35 @@ func (s *Store) List(ctx context.Context, scope *Scope) ([]Entry, error) {
 	return entries, rows.Err()
 }
 
+// Search finds knowledge entries matching a text query (case-insensitive substring).
+// Searches both title and content. Returns all matches since knowledge base is small.
+func (s *Store) Search(ctx context.Context, query string) ([]Entry, error) {
+	pattern := "%" + query + "%"
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, title, content, scope, workspace_id, tags, created_at, updated_at
+		FROM knowledge
+		WHERE title ILIKE ? OR content ILIKE ?
+		ORDER BY updated_at DESC`, pattern, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []Entry
+	for rows.Next() {
+		var e Entry
+		var scope string
+		var tagsJSON string
+		if err := rows.Scan(&e.ID, &e.Title, &e.Content, &scope, &e.WorkspaceID, &tagsJSON, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		e.Scope = Scope(scope)
+		e.Tags = parseTags(tagsJSON)
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 // FindForScope returns knowledge entries visible to the given scope.
 func (s *Store) FindForScope(ctx context.Context, workspaceID string, includeGlobal bool) ([]Entry, error) {
 	var conditions []string

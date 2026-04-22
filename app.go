@@ -634,6 +634,29 @@ func (a *App) Query(workspaceID, channelID, question string) (*QueryResponse, er
 		sources = append(sources, qr)
 	}
 
+	// Fallback: text search knowledge base if RAG didn't find any knowledge entries
+	hasKnowledge := false
+	for _, s := range sources {
+		if s.ChannelName == "knowledge" {
+			hasKnowledge = true
+			break
+		}
+	}
+	if !hasKnowledge {
+		kbResults, _ := a.kb.Search(a.ctx, question)
+		for _, entry := range kbResults {
+			sources = append(sources, QueryResult{
+				RecordID:    entry.ID,
+				WorkspaceID: "__global__",
+				ChannelID:   "__knowledge__",
+				ChannelName: "knowledge",
+				UserName:    "Knowledge: " + entry.Title,
+				Content:     entry.Content,
+				Score:       0.5, // Arbitrary score for text match
+			})
+		}
+	}
+
 	// Generate LLM answer if backend is available
 	answer := ""
 	if a.backend != nil && len(sources) > 0 {
