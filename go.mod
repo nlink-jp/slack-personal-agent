@@ -2,7 +2,10 @@ module github.com/nlink-jp/slack-personal-agent
 
 go 1.26.2
 
-require github.com/wailsapp/wails/v2 v2.12.0
+require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/wailsapp/wails/v2 v2.12.0
+)
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
