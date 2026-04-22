@@ -6,6 +6,10 @@ export function AddKnowledge(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['AddKnowledge'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function AddWorkspace(arg1) {
+  return window['go']['main']['App']['AddWorkspace'](arg1);
+}
+
 export function ApproveProposal(arg1) {
   return window['go']['main']['App']['ApproveProposal'](arg1);
 }
@@ -52,6 +56,10 @@ export function Query(arg1, arg2, arg3) {
 
 export function RejectProposal(arg1) {
   return window['go']['main']['App']['RejectProposal'](arg1);
+}
+
+export function RemoveWorkspace(arg1) {
+  return window['go']['main']['App']['RemoveWorkspace'](arg1);
 }
 
 export function SaveConfig(arg1) {

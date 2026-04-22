@@ -503,3 +503,67 @@ body {
 .channel-name {
   font-weight: 500;
 }
+
+.channel-selector {
+  margin-top: 8px;
+}
+
+.channel-selector-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.channel-selector-actions button {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+/* Workspace setup card (Settings tab) */
+.ws-setup-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.ws-setup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ws-setup-header .workspace-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.ws-setup-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.step-label {
+  min-width: 90px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-top: 4px;
+}
+
+.step-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

@@ -7,6 +7,8 @@ import {main} from '../models';
 
 export function AddKnowledge(arg1:string,arg2:string,arg3:string,arg4:string,arg5:Array<string>):Promise<knowledge.Entry>;
 
+export function AddWorkspace(arg1:string):Promise<void>;
+
 export function ApproveProposal(arg1:string):Promise<void>;
 
 export function DeleteKnowledge(arg1:string):Promise<void>;
@@ -30,6 +32,8 @@ export function ListKnowledge(arg1:string):Promise<Array<knowledge.Entry>>;
 export function Query(arg1:string,arg2:string,arg3:string):Promise<Array<main.QueryResult>>;
 
 export function RejectProposal(arg1:string):Promise<void>;
+
+export function RemoveWorkspace(arg1:string):Promise<void>;
 
 export function SaveConfig(arg1:config.Config):Promise<void>;
 

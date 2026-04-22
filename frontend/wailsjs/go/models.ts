@@ -386,6 +386,7 @@ export namespace main {
 	    name: string;
 	    has_token: boolean;
 	    polling: boolean;
+	    num_channels: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceStatus(source);
@@ -396,6 +397,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.has_token = source["has_token"];
 	        this.polling = source["polling"];
+	        this.num_channels = source["num_channels"];
 	    }
 	}
 
