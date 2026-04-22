@@ -15,6 +15,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/knowledge"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
+	"github.com/nlink-jp/slack-personal-agent/internal/notify"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
 	"github.com/nlink-jp/slack-personal-agent/internal/slack"
 	"github.com/nlink-jp/slack-personal-agent/internal/timectx"
@@ -102,6 +103,14 @@ func (a *App) startup(ctx context.Context) {
 	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
 	a.mitlMgr.OnProposal = func(p *mitl.Proposal) {
 		log.Printf("MITL proposal: [%s/%s] %s", p.WorkspaceName, p.ChannelName, p.DraftText[:min(len(p.DraftText), 80)])
+		// macOS notification
+		title := "spa: Response Proposal"
+		subtitle := fmt.Sprintf("%s / %s", p.WorkspaceName, p.ChannelName)
+		body := p.DraftText
+		if len(body) > 100 {
+			body = body[:100] + "..."
+		}
+		notify.SendWithSubtitle(ctx, title, subtitle, body)
 	}
 	a.mitlMgr.OnExpire = func(p *mitl.Proposal) {
 		log.Printf("MITL expired: %s", p.ID)
