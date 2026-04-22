@@ -335,6 +335,86 @@ textarea {
   to { transform: rotate(360deg); }
 }
 
+/* Stats row (compact) */
+.stats-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.stat-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+
+.stat-value-sm {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Timeline */
+.timeline-section {
+  flex: 1;
+}
+
+.timeline {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.timeline-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  animation: fadeIn 0.3s ease-out;
+}
+
+.timeline-item:last-child {
+  border-bottom: none;
+}
+
+.timeline-self {
+  border-left: 3px solid var(--accent);
+}
+
+.timeline-bot {
+  border-left: 3px solid var(--text-secondary);
+}
+
+.timeline-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 0.8rem;
+}
+
+.timeline-channel {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.timeline-user {
+  color: var(--text-secondary);
+}
+
+.timeline-text {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Memory stats */
 .stats-grid {
   display: flex;

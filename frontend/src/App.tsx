@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { useState, useEffect, useCallback, useRef, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 import "./App.css";
 
 // Disable OS auto-correction on all text inputs (macOS forces capitalization etc.)
@@ -46,6 +46,7 @@ declare global {
 }
 
 interface WorkspaceStatus { name: string; has_token: boolean; polling: boolean; num_channels: number; }
+interface TimelineMsg { workspace_id: string; channel_id: string; channel_name: string; user_name: string; text: string; ts: string; author_type: string; }
 interface ChannelInfoRemote { id: string; name: string; is_private: boolean; num_members: number; topic: string; monitored: boolean; }
 interface ChannelStatsInfo { channel_id: string; channel_name: string; msg_count: number; last_ts: string; }
 interface QueryResult { record_id: string; workspace_id: string; channel_id: string; channel_name: string; user_name: string; content: string; ts: string; score: number; }
@@ -138,96 +139,77 @@ function App() {
   );
 }
 
-// ── Dashboard: overview with channel statistics ────────
+// ── Dashboard: live timeline + overview ─────────────────
+
+const MAX_TIMELINE = 100;
 
 function DashboardTab({ workspaces, memoryStats }: {
   workspaces: WorkspaceStatus[]; memoryStats: Record<string, number>;
 }) {
-  const [channelStats, setChannelStats] = useState<Record<string, ChannelStatsInfo[]>>({});
+  const [timeline, setTimeline] = useState<TimelineMsg[]>([]);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadStats = async () => {
-      const stats: Record<string, ChannelStatsInfo[]> = {};
-      for (const ws of workspaces) {
-        if (ws.polling) {
-          try {
-            stats[ws.name] = await window.go.main.App.GetChannelStats(ws.name) || [];
-          } catch { /* ignore */ }
-        }
-      }
-      setChannelStats(stats);
+    const onMessage = (msg: TimelineMsg) => {
+      setTimeline((prev) => {
+        const next = [msg, ...prev];
+        return next.length > MAX_TIMELINE ? next.slice(0, MAX_TIMELINE) : next;
+      });
     };
-    loadStats();
-    const interval = setInterval(loadStats, 10000);
-    return () => clearInterval(interval);
-  }, [workspaces]);
+    // @ts-ignore
+    window.runtime?.EventsOn("timeline:message", onMessage);
+    return () => {
+      // @ts-ignore
+      window.runtime?.EventsOff("timeline:message");
+    };
+  }, []);
 
   const totalMessages = Object.values(memoryStats).reduce((a, b) => a + b, 0);
 
   return (
     <>
       <section className="section">
-        <h2>Overview</h2>
-        <div className="stats-grid">
-          <div className="stat">
-            <span className="stat-value">{workspaces.filter((w) => w.polling).length}</span>
-            <span className="stat-label">Active</span>
-          </div>
-          <div className="stat">
-            <span className="stat-value">{totalMessages}</span>
-            <span className="stat-label">Messages</span>
+        <div className="stats-row">
+          {workspaces.map((ws) => (
+            <div key={ws.name} className="stat-compact">
+              <span className="workspace-name">{ws.name}</span>
+              <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
+              <span className="badge badge-ok">{ws.num_channels} ch</span>
+            </div>
+          ))}
+          <div className="stat-compact">
+            <span className="stat-value-sm">{totalMessages}</span>
+            <span className="muted">total</span>
           </div>
           {["hot", "warm", "cold"].map((tier) => (
-            <div key={tier} className="stat">
-              <span className="stat-value">{memoryStats[tier] || 0}</span>
-              <span className="stat-label">{tier}</span>
+            <div key={tier} className="stat-compact">
+              <span className="stat-value-sm">{memoryStats[tier] || 0}</span>
+              <span className="muted">{tier}</span>
             </div>
           ))}
         </div>
       </section>
 
-      {workspaces.map((ws) => (
-        <section key={ws.name} className="section">
-          <div className="section-header">
-            <h2>{ws.name}</h2>
-            <div className="workspace-info">
-              <span className={`badge ${ws.has_token ? "badge-ok" : "badge-warn"}`}>{ws.has_token ? "Token" : "No token"}</span>
-              <span className={`badge ${ws.num_channels > 0 ? "badge-ok" : "badge-warn"}`}>{ws.num_channels} ch</span>
-              <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
-            </div>
-          </div>
-
-          {channelStats[ws.name] && channelStats[ws.name].length > 0 && (
-            <div className="channel-stats-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Channel</th>
-                    <th>Messages</th>
-                    <th>ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {channelStats[ws.name].map((ch) => (
-                    <tr key={ch.channel_id}>
-                      <td className="channel-name">#{ch.channel_name || "unknown"}</td>
-                      <td className="msg-count">{ch.msg_count}</td>
-                      <td className="channel-id">{ch.channel_id}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      <section className="section timeline-section">
+        <h2>Timeline {timeline.length > 0 && <span className="muted">({timeline.length})</span>}</h2>
+        <div className="timeline" ref={timelineRef}>
+          {timeline.length === 0 ? (
+            <p className="muted">Waiting for new messages...</p>
+          ) : (
+            timeline.map((msg, i) => (
+              <div key={`${msg.ts}-${i}`} className={`timeline-item ${msg.author_type === "self" ? "timeline-self" : ""} ${msg.author_type === "bot" ? "timeline-bot" : ""}`}>
+                <div className="timeline-meta">
+                  <span className="timeline-channel">#{msg.channel_name || msg.channel_id}</span>
+                  <span className="timeline-user">{msg.user_name || "unknown"}</span>
+                  {msg.author_type === "bot" && <span className="badge badge-inactive">bot</span>}
+                  {msg.author_type === "self" && <span className="badge badge-ok">you</span>}
+                </div>
+                <div className="timeline-text">{msg.text.length > 300 ? msg.text.slice(0, 300) + "..." : msg.text}</div>
+              </div>
+            ))
           )}
-
-          {(!channelStats[ws.name] || channelStats[ws.name].length === 0) && ws.polling && (
-            <p className="muted">Collecting messages...</p>
-          )}
-          {!ws.polling && (
-            <p className="muted">Not polling. Start in Settings.</p>
-          )}
-        </section>
-      ))}
+        </div>
+      </section>
     </>
   );
 }

@@ -660,6 +660,17 @@ Context:
 	return &QueryResponse{Answer: answer, Sources: sources}, nil
 }
 
+// TimelineMessage is pushed to the frontend for the live timeline.
+type TimelineMessage struct {
+	WorkspaceID string `json:"workspace_id"`
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	UserName    string `json:"user_name"`
+	Text        string `json:"text"`
+	Ts          string `json:"ts"`
+	AuthorType  string `json:"author_type"`
+}
+
 // QueryResult is the frontend-facing search result.
 type QueryResult struct {
 	RecordID    string  `json:"record_id"`
@@ -923,6 +934,18 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 
 		if inserted {
 			newMessages = append(newMessages, msg)
+
+			// Push to frontend timeline
+			channelName := a.store.GetCachedChannelName(a.ctx, workspaceName, channelID)
+			wailsRuntime.EventsEmit(a.ctx, "timeline:message", TimelineMessage{
+				WorkspaceID: workspaceName,
+				ChannelID:   channelID,
+				ChannelName: channelName,
+				UserName:    userName,
+				Text:        msg.Text,
+				Ts:          msg.Ts,
+				AuthorType:  string(record.AuthorType),
+			})
 
 			// Index for RAG
 			embID := record.ID + "-emb"
