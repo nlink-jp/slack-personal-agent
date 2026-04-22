@@ -75,6 +75,7 @@ function App() {
   const [memoryStats, setMemoryStats] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
+  const [timeline, setTimeline] = useState<TimelineMsg[]>([]);
 
   // Listen for agent events from backend
   useEffect(() => {
@@ -87,15 +88,25 @@ function App() {
       setToast({ type: "review", message: `Action needed: ${data?.channel_name || ""} — ${data?.summary || ""}` });
       setTimeout(() => setToast(null), 8000);
     };
+    const onTimelineMessage = (msg: TimelineMsg) => {
+      setTimeline((prev) => {
+        const next = [msg, ...prev];
+        return next.length > 100 ? next.slice(0, 100) : next;
+      });
+    };
     // @ts-ignore — Wails runtime events
     window.runtime?.EventsOn("agent:respond", onRespond);
     // @ts-ignore
     window.runtime?.EventsOn("agent:review", onReview);
+    // @ts-ignore
+    window.runtime?.EventsOn("timeline:message", onTimelineMessage);
     return () => {
       // @ts-ignore
       window.runtime?.EventsOff("agent:respond");
       // @ts-ignore
       window.runtime?.EventsOff("agent:review");
+      // @ts-ignore
+      window.runtime?.EventsOff("timeline:message");
     };
   }, []);
 
@@ -143,7 +154,7 @@ function App() {
 
       {error && <div className="error">{error}</div>}
 
-      {tab === "dashboard" && <DashboardTab workspaces={workspaces} memoryStats={memoryStats} />}
+      {tab === "dashboard" && <DashboardTab workspaces={workspaces} memoryStats={memoryStats} timeline={timeline} />}
       {tab === "query" && <QueryTab setError={setError} />}
       {tab === "proposals" && <ProposalsTab setError={setError} />}
       {tab === "knowledge" && <KnowledgeTab setError={setError} />}
@@ -154,28 +165,10 @@ function App() {
 
 // ── Dashboard: live timeline + overview ─────────────────
 
-const MAX_TIMELINE = 100;
-
-function DashboardTab({ workspaces, memoryStats }: {
-  workspaces: WorkspaceStatus[]; memoryStats: Record<string, number>;
+function DashboardTab({ workspaces, memoryStats, timeline }: {
+  workspaces: WorkspaceStatus[]; memoryStats: Record<string, number>; timeline: TimelineMsg[];
 }) {
-  const [timeline, setTimeline] = useState<TimelineMsg[]>([]);
   const timelineRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onMessage = (msg: TimelineMsg) => {
-      setTimeline((prev) => {
-        const next = [msg, ...prev];
-        return next.length > MAX_TIMELINE ? next.slice(0, MAX_TIMELINE) : next;
-      });
-    };
-    // @ts-ignore
-    window.runtime?.EventsOn("timeline:message", onMessage);
-    return () => {
-      // @ts-ignore
-      window.runtime?.EventsOff("timeline:message");
-    };
-  }, []);
 
   const totalMessages = Object.values(memoryStats).reduce((a, b) => a + b, 0);
 
