@@ -225,7 +225,15 @@ func (a *App) startNotifierHelper() {
 
 	a.log.Info("starting notification helper: %s", helperPath)
 	cmd := exec.Command(helperPath, a.notifySrv.SocketPath())
-	cmd.Stderr = os.Stderr
+	// Redirect helper stderr to a log file for debugging
+	helperLog, err := os.OpenFile(
+		filepath.Join(config.DefaultDataDir(), "logs", "spa-notify.log"),
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err == nil {
+		cmd.Stderr = helperLog
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Start(); err != nil {
 		a.log.Warn("failed to start notifier helper: %v", err)
 		return

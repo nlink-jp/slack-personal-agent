@@ -125,9 +125,12 @@ func showNotification(msg: Message) {
     let id = msg.id ?? UUID().uuidString
     let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
 
+    fputs("spa-notify: sending notification: \(content.title) — \(content.body.prefix(80))\n", stderr)
     UNUserNotificationCenter.current().add(request) { error in
         if let error = error {
-            fputs("Notification error: \(error)\n", stderr)
+            fputs("spa-notify: notification error: \(error)\n", stderr)
+        } else {
+            fputs("spa-notify: notification delivered\n", stderr)
         }
     }
 }
@@ -146,10 +149,13 @@ let center = UNUserNotificationCenter.current()
 let delegate = NotificationDelegate()
 center.delegate = delegate
 
-center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-    if !granted {
-        fputs("spa-notify: notification permission denied\n", stderr)
+// Request provisional authorization (delivers quietly to notification center
+// without requiring explicit user permission first)
+center.requestAuthorization(options: [.alert, .sound, .provisional]) { granted, error in
+    if let error = error {
+        fputs("spa-notify: auth error: \(error)\n", stderr)
     }
+    fputs("spa-notify: notification permission: \(granted ? "granted" : "denied (will try anyway)")\n", stderr)
 }
 
 // Connect to socket with retry

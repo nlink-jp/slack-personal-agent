@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 )
 
@@ -39,9 +38,11 @@ type Server struct {
 }
 
 // NewServer creates a new notification socket server.
+// Socket is placed in /tmp to avoid spaces in path (macOS "Application Support"
+// causes argument splitting issues when passing to helper process).
 func NewServer(dataDir string) *Server {
 	return &Server{
-		sockPath: filepath.Join(dataDir, "notify.sock"),
+		sockPath: fmt.Sprintf("/tmp/spa-notify-%d.sock", os.Getpid()),
 	}
 }
 
