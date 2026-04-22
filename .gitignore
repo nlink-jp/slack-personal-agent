@@ -27,5 +27,9 @@ frontend/dist/
 *.swp
 *.swo
 
+# Swift build artifacts
+notifier/.build/
+notifier/.swiftpm/
+
 # Claude Code
 .claude/
