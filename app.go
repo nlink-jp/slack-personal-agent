@@ -573,21 +573,37 @@ type QueryResponse struct {
 	Sources []QueryResult `json:"sources"`
 }
 
-// Query performs a channel-scoped RAG query and generates an LLM answer.
+// Query performs a RAG query and generates an LLM answer.
+// If channelID is empty, searches all monitored channels + knowledge base.
 func (a *App) Query(workspaceID, channelID, question string) (*QueryResponse, error) {
-	// Build scope from config groups (Level 2/3 permissions)
-	scope := rag.BuildScope(workspaceID, channelID, a.cfg.Scopes)
+	var scope rag.SearchScope
 
-	// Include workspace-scoped knowledge (__knowledge__ channel)
-	scope.CrossChannelIDs = append(scope.CrossChannelIDs, "__knowledge__")
-
-	// Include global knowledge if any cross-workspace scope exists
-	if len(scope.CrossWorkspaces) > 0 {
-		scope.CrossWorkspaces = append(scope.CrossWorkspaces, rag.WorkspaceScope{
-			WorkspaceID: "__global__",
-			ChannelIDs:  []string{"__knowledge__"},
-		})
+	if channelID != "" {
+		// Channel-specific search with scope groups
+		scope = rag.BuildScope(workspaceID, channelID, a.cfg.Scopes)
+		scope.CrossChannelIDs = append(scope.CrossChannelIDs, "__knowledge__")
+	} else {
+		// Workspace-wide search: all monitored channels + knowledge
+		scope = rag.SearchScope{
+			WorkspaceID: workspaceID,
+			ChannelID:   "__knowledge__", // Primary: knowledge base
+		}
+		// Add all monitored channels as cross-channel
+		for _, ws := range a.cfg.Workspaces {
+			if ws.Name == workspaceID {
+				for _, ch := range ws.Channels {
+					scope.CrossChannelIDs = append(scope.CrossChannelIDs, ch)
+				}
+				break
+			}
+		}
 	}
+
+	// Always include global knowledge
+	scope.CrossWorkspaces = append(scope.CrossWorkspaces, rag.WorkspaceScope{
+		WorkspaceID: "__global__",
+		ChannelIDs:  []string{"__knowledge__"},
+	})
 
 	results, err := a.retriever.Search(a.ctx, question, scope, 10)
 	if err != nil {

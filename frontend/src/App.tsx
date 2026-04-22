@@ -155,7 +155,7 @@ function App() {
       {error && <div className="error">{error}</div>}
 
       {tab === "dashboard" && <DashboardTab workspaces={workspaces} memoryStats={memoryStats} timeline={timeline} />}
-      {tab === "query" && <QueryTab setError={setError} />}
+      {tab === "query" && <QueryTab setError={setError} workspaces={workspaces} />}
       {tab === "proposals" && <ProposalsTab setError={setError} />}
       {tab === "knowledge" && <KnowledgeTab setError={setError} />}
       {tab === "settings" && <SettingsTab setError={setError} onRefresh={refresh} />}
@@ -396,15 +396,22 @@ function SettingsTab({ setError, onRefresh }: { setError: (e: string) => void; o
 
 interface QueryResponseType { answer: string; sources: QueryResult[]; }
 
-function QueryTab({ setError }: { setError: (e: string) => void }) {
+function QueryTab({ setError, workspaces }: { setError: (e: string) => void; workspaces: WorkspaceStatus[] }) {
   const [queryWs, setQueryWs] = useState("");
   const [queryCh, setQueryCh] = useState("");
   const [query, setQuery] = useState("");
   const [response, setResponse] = useState<QueryResponseType | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Auto-select first workspace
+  useEffect(() => {
+    if (!queryWs && workspaces.length > 0) {
+      setQueryWs(workspaces[0].name);
+    }
+  }, [workspaces, queryWs]);
+
   const handleQuery = async () => {
-    if (!queryWs || !queryCh || !query) return;
+    if (!queryWs || !query) return;
     try {
       setError(""); setLoading(true);
       const resp = await window.go.main.App.Query(queryWs, queryCh, query);
@@ -417,9 +424,11 @@ function QueryTab({ setError }: { setError: (e: string) => void }) {
     <section className="section">
       <h2>Query</h2>
       <div className="query-form">
-        <input {...inputProps} placeholder="Workspace ID" value={queryWs} onChange={(e) => setQueryWs(e.target.value)} />
-        <input {...inputProps} placeholder="Channel ID" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
-        <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !loading && handleQuery()} />
+        <select value={queryWs} onChange={(e) => setQueryWs(e.target.value)}>
+          {workspaces.map((ws) => <option key={ws.name} value={ws.name}>{ws.name}</option>)}
+        </select>
+        <input {...inputProps} placeholder="Channel ID (empty = all)" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
+        <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !loading && handleQuery()} style={{ flex: 2 }} />
         <button onClick={handleQuery} disabled={loading}>{loading ? "Thinking..." : "Ask"}</button>
       </div>
 
