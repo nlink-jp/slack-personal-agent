@@ -13,6 +13,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/keychain"
 	"github.com/nlink-jp/slack-personal-agent/internal/llm"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
+	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
 	"github.com/nlink-jp/slack-personal-agent/internal/slack"
 )
@@ -26,6 +27,8 @@ type App struct {
 	backend   llm.Backend
 	embedder  embedding.Embedder
 	keys      keychain.Store
+	mitlMgr   *mitl.Manager
+	clients   map[string]*slack.Client // workspace → client for posting
 	pollers   map[string]*slack.WorkspacePoller
 	mu        sync.Mutex
 }
@@ -34,6 +37,7 @@ type App struct {
 func NewApp() *App {
 	return &App{
 		pollers: make(map[string]*slack.WorkspacePoller),
+		clients: make(map[string]*slack.Client),
 	}
 }
 
@@ -83,6 +87,15 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("Error: RAG migration failed: %v", err)
 	}
 	a.retriever = retriever
+
+	// Initialize MITL manager
+	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
+	a.mitlMgr.OnProposal = func(p *mitl.Proposal) {
+		log.Printf("MITL proposal: [%s/%s] %s", p.WorkspaceName, p.ChannelName, p.DraftText[:min(len(p.DraftText), 80)])
+	}
+	a.mitlMgr.OnExpire = func(p *mitl.Proposal) {
+		log.Printf("MITL expired: %s", p.ID)
+	}
 
 	// Check embedding model consistency
 	storedID, consistent, err := retriever.CheckModelConsistency(ctx)
@@ -194,6 +207,7 @@ func (a *App) StartPolling(workspace string) error {
 	poller.OnMessages = a.handleMessages
 
 	a.pollers[workspace] = poller
+	a.clients[workspace] = client
 
 	// Start scheduler and poller in background
 	go scheduler.Run(a.ctx)
@@ -259,6 +273,64 @@ func (a *App) GetMemoryStats() (map[string]int, error) {
 		result[string(tier)] = count
 	}
 	return result, nil
+}
+
+// ── MITL Proxy Response ─────────────────────────────────
+
+// GetPendingProposals returns all pending MITL proposals.
+func (a *App) GetPendingProposals() []*mitl.Proposal {
+	return a.mitlMgr.GetPending()
+}
+
+// ApproveProposal approves a MITL proposal and posts it to Slack.
+func (a *App) ApproveProposal(id string) error {
+	p, err := a.mitlMgr.Approve(id)
+	if err != nil {
+		return err
+	}
+
+	a.mu.Lock()
+	client, ok := a.clients[p.WorkspaceID]
+	a.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no client for workspace %q", p.WorkspaceID)
+	}
+
+	// Post with signature for sender identification
+	_, err = client.PostProxyMessage(a.ctx, p.ChannelID, p.DraftText, p.ThreadTs, a.cfg.Response.Signature)
+	if err != nil {
+		return fmt.Errorf("post proxy message: %w", err)
+	}
+
+	// Boost polling priority for this channel
+	a.mu.Lock()
+	if poller, exists := a.pollers[p.WorkspaceID]; exists {
+		poller.Scheduler.BoostChannel(p.ChannelID)
+	}
+	a.mu.Unlock()
+
+	return a.mitlMgr.MarkPosted(id)
+}
+
+// RejectProposal rejects a MITL proposal.
+func (a *App) RejectProposal(id string) error {
+	_, err := a.mitlMgr.Reject(id)
+	return err
+}
+
+// EditAndApproveProposal allows the user to edit the draft before approving.
+func (a *App) EditAndApproveProposal(id, editedText string) error {
+	a.mu.Lock()
+	p, ok := a.mitlMgr.Get(id)
+	if ok {
+		p.DraftText = editedText
+	}
+	a.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("proposal %q not found", id)
+	}
+	return a.ApproveProposal(id)
 }
 
 // handleMessages processes new messages from a workspace poller.
