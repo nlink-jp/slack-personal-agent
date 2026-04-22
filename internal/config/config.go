@@ -17,6 +17,7 @@ type Config struct {
 	LLM        LLMConfig         `toml:"llm" json:"llm"`
 	VertexAI   VertexAIConfig    `toml:"vertex_ai" json:"vertex_ai"`
 	LocalLLM   LocalLLMConfig    `toml:"local_llm" json:"local_llm"`
+	Embedding  EmbeddingConfig   `toml:"embedding" json:"embedding"`
 	Polling    PollingConfig     `toml:"polling" json:"polling"`
 	Memory     MemoryConfig      `toml:"memory" json:"memory"`
 	Response   ResponseConfig    `toml:"response" json:"response"`
@@ -47,6 +48,26 @@ type LocalLLMConfig struct {
 	Endpoint string `toml:"endpoint" json:"endpoint"`
 	Model    string `toml:"model" json:"model"`
 	APIKey   string `toml:"api_key" json:"api_key"`
+}
+
+// EmbeddingConfig selects the embedding backend.
+// Embedding is independent of the LLM backend to avoid re-indexing on LLM switch.
+type EmbeddingConfig struct {
+	Backend  string              `toml:"backend" json:"backend"` // "builtin", "local", or "vertex_ai"
+	Local    EmbeddingLocalConfig    `toml:"local" json:"local"`
+	VertexAI EmbeddingVertexAIConfig `toml:"vertex_ai" json:"vertex_ai"`
+}
+
+// EmbeddingLocalConfig holds settings for OpenAI-compatible embedding endpoint.
+type EmbeddingLocalConfig struct {
+	Endpoint string `toml:"endpoint" json:"endpoint"`
+	Model    string `toml:"model" json:"model"`
+	APIKey   string `toml:"api_key" json:"api_key"`
+}
+
+// EmbeddingVertexAIConfig holds settings for Vertex AI embedding.
+type EmbeddingVertexAIConfig struct {
+	Model string `toml:"model" json:"model"`
 }
 
 // PollingConfig controls Slack API polling behavior.
@@ -113,6 +134,16 @@ func DefaultConfig() *Config {
 		LocalLLM: LocalLLMConfig{
 			Endpoint: "http://localhost:1234/v1",
 			Model:    "google/gemma-4-26b-a4b",
+		},
+		Embedding: EmbeddingConfig{
+			Backend: "builtin",
+			Local: EmbeddingLocalConfig{
+				Endpoint: "http://localhost:1234/v1",
+				Model:    "text-embedding-nomic-embed-text-v1.5",
+			},
+			VertexAI: EmbeddingVertexAIConfig{
+				Model: "text-embedding-005",
+			},
 		},
 		Polling: PollingConfig{
 			IntervalSec:      120,
@@ -196,6 +227,15 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("SPA_LOCAL_API_KEY"); v != "" {
 		cfg.LocalLLM.APIKey = v
+	}
+	if v := os.Getenv("SPA_EMBEDDING_BACKEND"); v != "" {
+		cfg.Embedding.Backend = v
+	}
+	if v := os.Getenv("SPA_EMBEDDING_LOCAL_ENDPOINT"); v != "" {
+		cfg.Embedding.Local.Endpoint = v
+	}
+	if v := os.Getenv("SPA_EMBEDDING_LOCAL_MODEL"); v != "" {
+		cfg.Embedding.Local.Model = v
 	}
 	if v := os.Getenv("SPA_POLLING_INTERVAL"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

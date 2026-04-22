@@ -25,6 +25,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Response.TimeoutSec != 120 {
 		t.Errorf("expected default timeout 120, got %d", cfg.Response.TimeoutSec)
 	}
+	if cfg.Embedding.Backend != "builtin" {
+		t.Errorf("expected default embedding backend 'builtin', got %q", cfg.Embedding.Backend)
+	}
 }
 
 func TestPollingConfigDuration(t *testing.T) {
@@ -66,6 +69,13 @@ backend = "vertex_ai"
 [polling]
 interval_sec = 60
 max_rate_per_min = 30
+
+[embedding]
+backend = "local"
+
+[embedding.local]
+endpoint = "http://localhost:11434/v1"
+model = "nomic-embed-text"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -97,6 +107,16 @@ max_rate_per_min = 30
 	// Defaults preserved for unset fields
 	if cfg.LocalLLM.Endpoint != "http://localhost:1234/v1" {
 		t.Errorf("expected default local endpoint, got %q", cfg.LocalLLM.Endpoint)
+	}
+	// Embedding config from file
+	if cfg.Embedding.Backend != "local" {
+		t.Errorf("expected embedding backend 'local', got %q", cfg.Embedding.Backend)
+	}
+	if cfg.Embedding.Local.Endpoint != "http://localhost:11434/v1" {
+		t.Errorf("expected embedding local endpoint, got %q", cfg.Embedding.Local.Endpoint)
+	}
+	if cfg.Embedding.Local.Model != "nomic-embed-text" {
+		t.Errorf("expected embedding local model, got %q", cfg.Embedding.Local.Model)
 	}
 }
 
