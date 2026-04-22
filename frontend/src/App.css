@@ -25,6 +25,49 @@ body {
   line-height: 1.5;
 }
 
+/* Global button base — larger touch targets */
+button {
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  min-height: 36px;
+}
+
+button:hover {
+  background: var(--border);
+}
+
+/* Global input/textarea base */
+input, textarea, select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  line-height: 1.4;
+  min-height: 36px;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-secondary);
+}
+
+textarea {
+  resize: vertical;
+}
+
 .app {
   max-width: 960px;
   margin: 0 auto;
@@ -128,19 +171,7 @@ body {
   color: var(--text-secondary);
 }
 
-.workspace-actions button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.875rem;
-}
-
-.workspace-actions button:hover {
-  background: var(--border);
-}
+/* workspace-actions uses global button styles */
 
 .btn-muted {
   opacity: 0.6;
@@ -161,29 +192,56 @@ body {
 
 .token-form input {
   flex: 1;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: 0.85rem;
   font-family: "SF Mono", "Menlo", monospace;
 }
 
-.token-form input:focus {
-  outline: none;
-  border-color: var(--accent);
+.token-form button {
+  white-space: nowrap;
 }
 
-.token-form button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.8rem;
-  white-space: nowrap;
+/* Channel stats table */
+.channel-stats-table {
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.channel-stats-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.channel-stats-table th {
+  text-align: left;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.channel-stats-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.channel-stats-table .channel-name {
+  font-weight: 500;
+}
+
+.channel-stats-table .msg-count {
+  text-align: right;
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.channel-stats-table .channel-id {
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 /* Memory stats */
@@ -226,32 +284,13 @@ body {
 
 .query-form input {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 0.875rem;
-}
-
-.query-form input::placeholder {
-  color: var(--text-secondary);
-}
-
-.query-form input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .query-form button {
-  padding: 8px 20px;
-  border: none;
-  border-radius: var(--radius);
   background: var(--accent);
   color: var(--bg-primary);
+  border: none;
   font-weight: 500;
-  cursor: pointer;
-  font-size: 0.875rem;
 }
 
 .query-form button:hover {
@@ -327,15 +366,7 @@ body {
 
 .section-header h2 { margin-bottom: 0; }
 
-.section-header button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.875rem;
-}
+/* section-header uses global button styles */
 
 /* Proposals */
 .proposal-card {
@@ -364,15 +395,8 @@ body {
 
 .proposal-edit {
   width: 100%;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 12px;
-  font-size: 0.875rem;
-  color: var(--text-primary);
+  border-color: var(--accent);
   margin-bottom: 12px;
-  resize: vertical;
-  font-family: inherit;
 }
 
 .proposal-actions {
@@ -381,15 +405,7 @@ body {
   margin-top: 8px;
 }
 
-.proposal-actions button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.8rem;
-}
+/* proposal-actions uses global button styles */
 
 .btn-approve {
   background: rgba(63, 185, 80, 0.15) !important;
@@ -415,19 +431,7 @@ body {
   border-radius: var(--radius);
 }
 
-.knowledge-form input,
-.knowledge-form textarea,
-.knowledge-form select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  font-family: inherit;
-}
-
-.knowledge-form textarea { resize: vertical; }
+/* knowledge-form uses global input/textarea styles */
 
 .form-row {
   display: flex;
@@ -514,15 +518,7 @@ body {
   margin-bottom: 8px;
 }
 
-.channel-selector-actions button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.8rem;
-}
+/* channel-selector-actions uses global button styles */
 
 /* Workspace setup card (Settings tab) */
 .ws-setup-card {

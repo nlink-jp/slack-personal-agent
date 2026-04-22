@@ -231,6 +231,49 @@ func (s *Store) CountByTier(ctx context.Context) (map[Tier]int, error) {
 	return counts, rows.Err()
 }
 
+// ChannelStats holds per-channel statistics for the dashboard.
+type ChannelStats struct {
+	WorkspaceID string
+	ChannelID   string
+	ChannelName string
+	MsgCount    int
+	LastTs      string
+	LastPolled  *time.Time
+}
+
+// GetChannelStats returns per-channel message counts and last activity for a workspace.
+func (s *Store) GetChannelStats(ctx context.Context, workspaceID string) ([]ChannelStats, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.workspace_id, c.channel_id, c.channel_name,
+			COALESCE(r.cnt, 0) AS msg_count,
+			COALESCE(c.last_ts, '') AS last_ts,
+			c.last_polled
+		FROM channels c
+		LEFT JOIN (
+			SELECT workspace_id, channel_id, COUNT(*) AS cnt
+			FROM records
+			WHERE workspace_id = ?
+			GROUP BY workspace_id, channel_id
+		) r ON c.workspace_id = r.workspace_id AND c.channel_id = r.channel_id
+		WHERE c.workspace_id = ?
+		ORDER BY msg_count DESC`,
+		workspaceID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ChannelStats
+	for rows.Next() {
+		var cs ChannelStats
+		if err := rows.Scan(&cs.WorkspaceID, &cs.ChannelID, &cs.ChannelName, &cs.MsgCount, &cs.LastTs, &cs.LastPolled); err != nil {
+			return nil, err
+		}
+		result = append(result, cs)
+	}
+	return result, rows.Err()
+}
+
 // UpsertChannel inserts or updates channel metadata with cache timestamp.
 func (s *Store) UpsertChannel(ctx context.Context, workspaceID, channelID, channelName string, isPrivate bool, numMembers int, topic, purpose string) error {
 	now := time.Now()

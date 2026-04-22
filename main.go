@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 
+	"github.com/nlink-jp/slack-personal-agent/internal/config"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -16,10 +17,25 @@ var version = "dev"
 func main() {
 	app := NewApp()
 
-	err := wails.Run(&options.App{
+	// Load config for window dimensions
+	cfg, err := config.Load(config.DefaultConfigPath())
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
+	width := cfg.Window.Width
+	height := cfg.Window.Height
+	if width < 400 {
+		width = 1280
+	}
+	if height < 300 {
+		height = 800
+	}
+
+	err = wails.Run(&options.App{
 		Title:  "slack-personal-agent",
-		Width:  1280,
-		Height: 800,
+		Width:  width,
+		Height: height,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

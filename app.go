@@ -10,6 +10,8 @@ import (
 
 	"github.com/nlink-jp/slack-personal-agent/internal/config"
 	"github.com/nlink-jp/slack-personal-agent/internal/embedding"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/nlink-jp/slack-personal-agent/internal/keychain"
 	"github.com/nlink-jp/slack-personal-agent/internal/llm"
 	"github.com/nlink-jp/slack-personal-agent/internal/knowledge"
@@ -145,6 +147,11 @@ func (a *App) startup(ctx context.Context) {
 	} else if !consistent {
 		a.log.Warn("embedding model changed (stored=%q, current=%q) — re-index recommended", storedID, embedder.ModelID())
 	}
+
+	// Restore window position from config
+	if cfg.Window.X != 0 || cfg.Window.Y != 0 {
+		wailsRuntime.WindowSetPosition(ctx, cfg.Window.X, cfg.Window.Y)
+	}
 }
 
 // shutdown is called when the app is closing.
@@ -152,6 +159,21 @@ func (a *App) shutdown(_ context.Context) {
 	if a.log != nil {
 		a.log.Info("shutting down")
 	}
+
+	// Save window position and size
+	if a.ctx != nil && a.cfg != nil {
+		x, y := wailsRuntime.WindowGetPosition(a.ctx)
+		w, h := wailsRuntime.WindowGetSize(a.ctx)
+		a.cfg.Window.X = x
+		a.cfg.Window.Y = y
+		a.cfg.Window.Width = w
+		a.cfg.Window.Height = h
+		config.Save(a.cfg, config.DefaultConfigPath())
+		if a.log != nil {
+			a.log.Info("saved window position (%d,%d) size (%dx%d)", x, y, w, h)
+		}
+	}
+
 	if a.store != nil {
 		a.store.Close()
 	}
@@ -169,6 +191,32 @@ func (a *App) Version() string {
 // Includes date, time, timezone, day of week, ISO week number.
 func (a *App) GetTimeContext() string {
 	return timectx.Now()
+}
+
+// ChannelStatsInfo holds per-channel statistics for the frontend.
+type ChannelStatsInfo struct {
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	MsgCount    int    `json:"msg_count"`
+	LastTs      string `json:"last_ts"`
+}
+
+// GetChannelStats returns per-channel message counts for a workspace.
+func (a *App) GetChannelStats(workspace string) ([]ChannelStatsInfo, error) {
+	stats, err := a.store.GetChannelStats(a.ctx, workspace)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]ChannelStatsInfo, 0, len(stats))
+	for _, s := range stats {
+		result = append(result, ChannelStatsInfo{
+			ChannelID:   s.ChannelID,
+			ChannelName: s.ChannelName,
+			MsgCount:    s.MsgCount,
+			LastTs:      s.LastTs,
+		})
+	}
+	return result, nil
 }
 
 // GetConfig returns the current configuration (without secrets).

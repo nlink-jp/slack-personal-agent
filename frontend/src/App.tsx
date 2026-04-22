@@ -1,5 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 import "./App.css";
+
+// Disable OS auto-correction on all text inputs (macOS forces capitalization etc.)
+const inputProps: InputHTMLAttributes<HTMLInputElement> = {
+  autoCapitalize: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+};
+const textareaProps: TextareaHTMLAttributes<HTMLTextAreaElement> = {
+  autoCapitalize: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+};
 
 declare global {
   interface Window {
@@ -22,6 +34,7 @@ declare global {
           AddKnowledge(title: string, content: string, scope: string, workspaceID: string, tags: string[]): Promise<KnowledgeEntry>;
           UpdateKnowledge(id: string, title: string, content: string, scope: string, workspaceID: string, tags: string[]): Promise<void>;
           DeleteKnowledge(id: string): Promise<void>;
+          GetChannelStats(workspace: string): Promise<ChannelStatsInfo[]>;
           AddWorkspace(name: string): Promise<void>;
           RemoveWorkspace(name: string): Promise<void>;
           ListAvailableChannels(workspace: string, forceRefresh: boolean): Promise<ChannelInfoRemote[]>;
@@ -34,6 +47,7 @@ declare global {
 
 interface WorkspaceStatus { name: string; has_token: boolean; polling: boolean; num_channels: number; }
 interface ChannelInfoRemote { id: string; name: string; is_private: boolean; num_members: number; topic: string; monitored: boolean; }
+interface ChannelStatsInfo { channel_id: string; channel_name: string; msg_count: number; last_ts: string; }
 interface QueryResult { record_id: string; workspace_id: string; channel_id: string; score: number; }
 interface Proposal { id: string; workspace_name: string; channel_name: string; trigger_text: string; draft_text: string; state: string; created_at: string; }
 interface KnowledgeEntry { id: string; title: string; content: string; scope: string; workspace_id: string; tags: string[]; created_at: string; updated_at: string; }
@@ -94,35 +108,45 @@ function App() {
   );
 }
 
-// ── Dashboard: read-only overview ──────────────────────
+// ── Dashboard: overview with channel statistics ────────
 
 function DashboardTab({ workspaces, memoryStats }: {
   workspaces: WorkspaceStatus[]; memoryStats: Record<string, number>;
 }) {
+  const [channelStats, setChannelStats] = useState<Record<string, ChannelStatsInfo[]>>({});
+
+  useEffect(() => {
+    const loadStats = async () => {
+      const stats: Record<string, ChannelStatsInfo[]> = {};
+      for (const ws of workspaces) {
+        if (ws.polling) {
+          try {
+            stats[ws.name] = await window.go.main.App.GetChannelStats(ws.name) || [];
+          } catch { /* ignore */ }
+        }
+      }
+      setChannelStats(stats);
+    };
+    loadStats();
+    const interval = setInterval(loadStats, 10000);
+    return () => clearInterval(interval);
+  }, [workspaces]);
+
+  const totalMessages = Object.values(memoryStats).reduce((a, b) => a + b, 0);
+
   return (
     <>
       <section className="section">
-        <h2>Workspaces</h2>
-        {workspaces.length === 0 ? (
-          <p className="muted">No workspaces configured. Go to Settings to add one.</p>
-        ) : (
-          <div className="workspace-list">
-            {workspaces.map((ws) => (
-              <div key={ws.name} className="workspace-card">
-                <div className="workspace-info">
-                  <span className="workspace-name">{ws.name}</span>
-                  <span className={`badge ${ws.has_token ? "badge-ok" : "badge-warn"}`}>{ws.has_token ? "Token" : "No token"}</span>
-                  <span className={`badge ${ws.num_channels > 0 ? "badge-ok" : "badge-warn"}`}>{ws.num_channels} ch</span>
-                  <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      <section className="section">
-        <h2>Memory</h2>
+        <h2>Overview</h2>
         <div className="stats-grid">
+          <div className="stat">
+            <span className="stat-value">{workspaces.filter((w) => w.polling).length}</span>
+            <span className="stat-label">Active</span>
+          </div>
+          <div className="stat">
+            <span className="stat-value">{totalMessages}</span>
+            <span className="stat-label">Messages</span>
+          </div>
           {["hot", "warm", "cold"].map((tier) => (
             <div key={tier} className="stat">
               <span className="stat-value">{memoryStats[tier] || 0}</span>
@@ -131,6 +155,49 @@ function DashboardTab({ workspaces, memoryStats }: {
           ))}
         </div>
       </section>
+
+      {workspaces.map((ws) => (
+        <section key={ws.name} className="section">
+          <div className="section-header">
+            <h2>{ws.name}</h2>
+            <div className="workspace-info">
+              <span className={`badge ${ws.has_token ? "badge-ok" : "badge-warn"}`}>{ws.has_token ? "Token" : "No token"}</span>
+              <span className={`badge ${ws.num_channels > 0 ? "badge-ok" : "badge-warn"}`}>{ws.num_channels} ch</span>
+              <span className={`badge ${ws.polling ? "badge-active" : "badge-inactive"}`}>{ws.polling ? "Polling" : "Stopped"}</span>
+            </div>
+          </div>
+
+          {channelStats[ws.name] && channelStats[ws.name].length > 0 && (
+            <div className="channel-stats-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Channel</th>
+                    <th>Messages</th>
+                    <th>ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {channelStats[ws.name].map((ch) => (
+                    <tr key={ch.channel_id}>
+                      <td className="channel-name">#{ch.channel_name || "unknown"}</td>
+                      <td className="msg-count">{ch.msg_count}</td>
+                      <td className="channel-id">{ch.channel_id}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {(!channelStats[ws.name] || channelStats[ws.name].length === 0) && ws.polling && (
+            <p className="muted">Collecting messages...</p>
+          )}
+          {!ws.polling && (
+            <p className="muted">Not polling. Start in Settings.</p>
+          )}
+        </section>
+      ))}
     </>
   );
 }
@@ -209,7 +276,7 @@ function SettingsTab({ setError, onRefresh }: { setError: (e: string) => void; o
       <div className="subsection">
         <h3>Add Workspace</h3>
         <div className="form-row" style={{ marginBottom: 16 }}>
-          <input placeholder="Workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)}
+          <input {...inputProps} placeholder="Workspace name" value={newWsName} onChange={(e) => setNewWsName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAddWs()} />
           <button className="btn-approve" onClick={handleAddWs}>Add</button>
         </div>
@@ -235,7 +302,7 @@ function SettingsTab({ setError, onRefresh }: { setError: (e: string) => void; o
             <span className="step-label">1. Token</span>
             {tokenWs === ws.name ? (
               <div className="token-form">
-                <input type="password" placeholder="xoxp-..." value={tokenValue}
+                <input {...inputProps} type="password" placeholder="xoxp-..." value={tokenValue}
                   onChange={(e) => setTokenValue(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSaveToken(ws.name)} autoFocus />
                 <button className="btn-approve" onClick={() => handleSaveToken(ws.name)}>Save</button>
@@ -327,9 +394,9 @@ function QueryTab({ setError }: { setError: (e: string) => void }) {
     <section className="section">
       <h2>Query</h2>
       <div className="query-form">
-        <input placeholder="Workspace ID" value={queryWs} onChange={(e) => setQueryWs(e.target.value)} />
-        <input placeholder="Channel ID" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
-        <input placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleQuery()} />
+        <input {...inputProps} placeholder="Workspace ID" value={queryWs} onChange={(e) => setQueryWs(e.target.value)} />
+        <input {...inputProps} placeholder="Channel ID" value={queryCh} onChange={(e) => setQueryCh(e.target.value)} />
+        <input {...inputProps} placeholder="Ask a question..." value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleQuery()} />
         <button onClick={handleQuery}>Search</button>
       </div>
       {results.length > 0 && (
@@ -381,7 +448,7 @@ function ProposalsTab({ setError }: { setError: (e: string) => void }) {
               </div>
               <div className="proposal-trigger"><strong>Trigger:</strong> {p.trigger_text}</div>
               {editId === p.id ? (
-                <textarea className="proposal-edit" value={editText} onChange={(e) => setEditText(e.target.value)} rows={4} />
+                <textarea {...textareaProps} className="proposal-edit" value={editText} onChange={(e) => setEditText(e.target.value)} rows={4} />
               ) : (
                 <div className="proposal-draft">{p.draft_text}</div>
               )}
@@ -450,15 +517,15 @@ function KnowledgeTab({ setError }: { setError: (e: string) => void }) {
 
       {showForm && (
         <div className="knowledge-form">
-          <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <textarea placeholder="Content" value={content} onChange={(e) => setContent(e.target.value)} rows={4} />
+          <input {...inputProps} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <textarea {...textareaProps} placeholder="Content" value={content} onChange={(e) => setContent(e.target.value)} rows={4} />
           <div className="form-row">
             <select value={scope} onChange={(e) => setScope(e.target.value)}>
               <option value="global">Global (L3)</option>
               <option value="workspace">Workspace (L2)</option>
             </select>
-            {scope === "workspace" && <input placeholder="Workspace ID" value={wsId} onChange={(e) => setWsId(e.target.value)} />}
-            <input placeholder="Tags (comma-separated)" value={tags} onChange={(e) => setTags(e.target.value)} />
+            {scope === "workspace" && <input {...inputProps} placeholder="Workspace ID" value={wsId} onChange={(e) => setWsId(e.target.value)} />}
+            <input {...inputProps} placeholder="Tags (comma-separated)" value={tags} onChange={(e) => setTags(e.target.value)} />
           </div>
           <button className="btn-approve" onClick={handleAdd}>Save</button>
         </div>
