@@ -674,6 +674,7 @@ func (a *App) classifyAuthor(workspaceName string, msg slack.Message) memory.Aut
 
 // handleMessages processes new messages from a workspace poller.
 func (a *App) handleMessages(workspaceName, channelID string, messages []slack.Message) {
+	a.log.Debug("handleMessages: %s/%s got %d messages", workspaceName, channelID, len(messages))
 	// Subtypes to skip — channel lifecycle events, not meaningful content
 	skipSubtypes := map[string]bool{
 		"channel_join":    true,
