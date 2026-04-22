@@ -163,6 +163,24 @@ func (c *Client) ListChannels(ctx context.Context) ([]Channel, error) {
 	return all, nil
 }
 
+// channelInfoResponse is the response from conversations.info.
+type channelInfoResponse struct {
+	slackResponse
+	Channel Channel `json:"channel"`
+}
+
+// GetChannelInfo retrieves information about a single channel.
+func (c *Client) GetChannelInfo(ctx context.Context, channelID string) (*Channel, error) {
+	params := url.Values{
+		"channel": {channelID},
+	}
+	var resp channelInfoResponse
+	if err := c.get(ctx, "conversations.info", params, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Channel, nil
+}
+
 // FetchHistory retrieves messages from a channel.
 // If oldest is non-empty, only messages after that timestamp are returned.
 // Returns at most limit messages (max 1000).

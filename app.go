@@ -455,9 +455,14 @@ func (a *App) StartPolling(workspace string) error {
 		a.cfg.Polling.Interval(),
 		a.cfg.Polling.PriorityBoostInterval())
 
-	// Register configured channels and store metadata
+	// Register configured channels — resolve names from cache or API
 	for _, chID := range wsCfg.Channels {
-		a.store.UpsertChannel(a.ctx, workspace, chID, "", false, 0, "", "")
+		name := a.store.GetCachedChannelName(a.ctx, workspace, chID)
+		if name == "" {
+			// Not in cache yet — only insert a placeholder, resolve in background
+			a.store.UpsertChannel(a.ctx, workspace, chID, chID, false, 0, "", "")
+			go a.resolveAndCacheChannel(workspace, client, chID)
+		}
 	}
 	scheduler.SetChannels(wsCfg.Channels)
 
@@ -724,6 +729,17 @@ func (a *App) DeleteKnowledge(id string) error {
 
 // knowledgeRAGScope returns synthetic workspace/channel IDs for RAG indexing.
 // Global knowledge uses "__global__" workspace, workspace-scoped uses the workspace ID.
+// resolveAndCacheChannel fetches channel info from Slack and caches it.
+func (a *App) resolveAndCacheChannel(workspaceName string, client *slack.Client, channelID string) {
+	ch, err := client.GetChannelInfo(a.ctx, channelID)
+	if err != nil {
+		a.log.Debug("failed to resolve channel %s: %v", channelID, err)
+		return
+	}
+	a.store.UpsertChannel(a.ctx, workspaceName, ch.ID, ch.Name, ch.IsPrivate, ch.NumMembers, ch.Topic.Value, ch.Purpose.Value)
+	a.log.Debug("cached channel %s → #%s", channelID, ch.Name)
+}
+
 // This allows RAG scope filters to include knowledge entries naturally.
 func knowledgeRAGScope(e *knowledge.Entry) (workspaceID, channelID string) {
 	if e.Scope == knowledge.ScopeGlobal {

@@ -31,7 +31,7 @@ export function ListAvailableChannels(arg1:string,arg2:boolean):Promise<Array<ma
 
 export function ListKnowledge(arg1:string):Promise<Array<knowledge.Entry>>;
 
-export function Query(arg1:string,arg2:string,arg3:string):Promise<Array<main.QueryResult>>;
+export function Query(arg1:string,arg2:string,arg3:string):Promise<main.QueryResponse>;
 
 export function RejectProposal(arg1:string):Promise<void>;
 
