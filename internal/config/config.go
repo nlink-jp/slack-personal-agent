@@ -105,7 +105,8 @@ func (m MemoryConfig) WarmToColdDuration() time.Duration {
 
 // ResponseConfig controls the MITL proxy response behavior.
 type ResponseConfig struct {
-	TimeoutSec int `toml:"timeout_sec" json:"timeout_sec"`
+	TimeoutSec int    `toml:"timeout_sec" json:"timeout_sec"`
+	Signature  string `toml:"signature" json:"signature"`
 }
 
 // Timeout returns the response approval timeout as a time.Duration.
@@ -156,6 +157,7 @@ func DefaultConfig() *Config {
 		},
 		Response: ResponseConfig{
 			TimeoutSec: 120,
+			Signature:  "— via spa (slack-personal-agent)",
 		},
 		Window: WindowConfig{
 			Width:  1280,

@@ -180,7 +180,7 @@ func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
 	return &resp.User, nil
 }
 
-// PostMessage posts a message to a channel. Used for MITL proxy responses.
+// PostMessage posts a message to a channel.
 func (c *Client) PostMessage(ctx context.Context, channelID, text, threadTs string) (string, error) {
 	params := url.Values{
 		"channel": {channelID},
@@ -196,6 +196,13 @@ func (c *Client) PostMessage(ctx context.Context, channelID, text, threadTs stri
 	}
 
 	return resp.Ts, nil
+}
+
+// PostProxyMessage posts a MITL proxy response with a system signature appended.
+// The signature identifies the message as system-generated, not user-authored.
+func (c *Client) PostProxyMessage(ctx context.Context, channelID, text, threadTs, signature string) (string, error) {
+	signed := text + "\n\n" + signature
+	return c.PostMessage(ctx, channelID, signed, threadTs)
 }
 
 func (c *Client) get(ctx context.Context, method string, params url.Values, result interface{}) error {
