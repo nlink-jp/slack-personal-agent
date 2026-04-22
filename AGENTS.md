@@ -28,19 +28,59 @@ DuckDB requires `no_duckdb_arrow` build tag with Wails.
 ```
 slack-personal-agent/
 ├── main.go              ← Wails entry point
-├── app.go               ← App struct, Wails bindings
-├── internal/            ← Private packages (to be implemented)
-│   ├── slack/           ← Slack API client, polling, queue
-│   ├── memory/          ← 3-tier lifecycle (Hot/Warm/Cold)
-│   ├── rag/             ← DuckDB VSS, channel-scoped retrieval
-│   ├── llm/             ← LLM backend interface
-│   ├── keychain/        ← Credential storage (go-keyring)
-│   └── config/          ← TOML configuration
+├── app.go               ← App struct, Wails bindings, orchestrator
+├── internal/
+│   ├── config/          ← TOML config, env overrides, validation
+│   │   ├── config.go
+│   │   └── config_test.go
+│   ├── keychain/        ← macOS Keychain credential storage
+│   │   ├── keychain.go  ← Store interface + OSStore
+│   │   ├── mock.go      ← MockStore for testing
+│   │   └── keychain_test.go
+│   ├── slack/           ← Slack Web API client + polling
+│   │   ├── client.go    ← API methods (list, history, post)
+│   │   ├── queue.go     ← Priority queue, rate limiter, scheduler, poller
+│   │   └── queue_test.go
+│   ├── memory/          ← DuckDB message store + lifecycle
+│   │   ├── record.go    ← Record model, Slack timestamp parser
+│   │   ├── store.go     ← DuckDB CRUD, tier transitions
+│   │   ├── lifecycle.go ← Hot→Warm→Cold compaction
+│   │   ├── record_test.go
+│   │   ├── store_test.go
+│   │   └── lifecycle_test.go
+│   ├── llm/             ← Chat/summarize LLM interface
+│   │   ├── backend.go   ← Backend interface + factory
+│   │   ├── local.go     ← OpenAI-compatible API
+│   │   ├── vertexai.go  ← Vertex AI Gemini
+│   │   ├── token.go     ← Token estimation (CJK-aware)
+│   │   └── backend_test.go
+│   ├── embedding/       ← Text vectorization (LLM-independent)
+│   │   ├── embedder.go  ← Embedder interface + factory
+│   │   ├── local.go     ← OpenAI-compatible /v1/embeddings
+│   │   ├── vertexai.go  ← Vertex AI text-embedding
+│   │   ├── mock.go      ← MockEmbedder for testing
+│   │   └── embedder_test.go
+│   ├── rag/             ← Channel-scoped vector search
+│   │   ├── retriever.go ← 3-tier scope filter, DuckDB list_cosine_similarity
+│   │   └── retriever_test.go
+│   ├── mitl/            ← Proxy response approval
+│   │   ├── mitl.go      ← Manager, Proposal lifecycle, timeout
+│   │   └── mitl_test.go
+│   └── knowledge/       ← Internal knowledge base
+│       ├── knowledge.go ← CRUD, scope (workspace/global)
+│       └── knowledge_test.go
 ├── frontend/
-│   └── src/             ← React TypeScript frontend
+│   └── src/
+│       ├── App.tsx      ← Dashboard, workspace cards, query UI
+│       ├── App.css      ← Dark theme
+│       └── main.tsx     ← React entry point
 ├── docs/
-│   ├── en/              ← English documentation
-│   └── ja/              ← Japanese documentation
+│   ├── en/
+│   │   ├── architecture.md
+│   │   └── slack-personal-agent-rfp.md
+│   └── ja/
+│       ├── architecture.ja.md
+│       └── slack-personal-agent-rfp.ja.md
 ├── Makefile
 ├── wails.json
 └── go.mod
@@ -50,22 +90,26 @@ slack-personal-agent/
 
 | Variable | Purpose |
 |----------|---------|
+| `SPA_LLM_BACKEND` | LLM backend (local / vertex_ai) |
+| `SPA_LOCAL_ENDPOINT` | Local LLM endpoint |
+| `SPA_LOCAL_MODEL` | Local LLM model |
+| `SPA_VERTEX_PROJECT` | Vertex AI project |
+| `SPA_VERTEX_REGION` | Vertex AI region |
+| `SPA_EMBEDDING_BACKEND` | Embedding backend (builtin / local / vertex_ai) |
+| `SPA_POLLING_INTERVAL` | Polling interval in seconds |
+| `SPA_MAX_RATE_PER_MIN` | Max Slack API calls per minute |
 | `SPA_TOKEN_<WORKSPACE>` | Slack User Token override (dev/test only) |
-| `SPA_LLM_BACKEND` | LLM backend override (local / vertex_ai) |
-| `SPA_LOCAL_ENDPOINT` | Local LLM endpoint override |
-| `SPA_VERTEX_PROJECT` | Vertex AI project override |
 
 ## Gotchas
 
-- **User Token, not Bot Token** — This is a personal agent using `xoxp-` tokens.
-  Socket Mode is not available for User Tokens; polling is the only option.
-- **DuckDB + Wails** — Must use `no_duckdb_arrow` build tag to avoid Arrow
-  dependency issues on macOS.
-- **Keychain credentials** — Tokens are stored in macOS Keychain via go-keyring.
-  Config files never contain tokens. Test with env var fallback only.
-- **3-tier knowledge isolation** — RAG queries must always include workspace_id +
-  channel_id filters. Global search is never permitted by default.
-- **MITL required** — All Slack posts go through user approval. No automatic posting.
+- **User Token, not Bot Token** — `xoxp-` tokens only. Socket Mode unavailable.
+- **DuckDB + Wails** — `no_duckdb_arrow` build tag required.
+- **DuckDB ART index** — No PRIMARY KEY on tables with UPDATE operations; use plain indexes.
+- **Keychain credentials** — Tokens in macOS Keychain, never in config.toml.
+- **3-tier isolation** — RAG queries always require workspace_id + channel_id. No global search.
+- **MITL required** — All Slack posts require user approval + signature.
+- **Embedding ≠ LLM** — Embedding backend is independent. Switching LLM backend does NOT affect embeddings.
+- **ModelID tracking** — Embedding model change requires re-index; system detects mismatch on startup.
 
 ## Series
 

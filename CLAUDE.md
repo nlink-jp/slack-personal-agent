@@ -19,14 +19,17 @@ Go + Wails v2 + React GUI.
 ## Architecture
 
 - **main.go** — Entry point, Wails app initialization
-- **app.go** — App struct, Wails bindings
-- **internal/slack/** — Slack API client, polling, API queue
+- **app.go** — App struct, Wails bindings, orchestrator
+- **internal/slack/** — Slack API client, polling, priority queue
 - **internal/memory/** — Hot/Warm/Cold lifecycle, time-aware records
-- **internal/rag/** — DuckDB VSS, channel-scoped retrieval
-- **internal/llm/** — LLM backend interface (local + Vertex AI)
+- **internal/rag/** — DuckDB vector search, 3-tier channel-scoped retrieval
+- **internal/llm/** — Chat/summarize backend (local + Vertex AI)
+- **internal/embedding/** — Independent text vectorization (local + Vertex AI + builtin planned)
+- **internal/mitl/** — MITL proxy response approval workflow
+- **internal/knowledge/** — Internal knowledge base (workspace/global scope)
 - **internal/keychain/** — Credential storage (go-keyring)
 - **internal/config/** — TOML config management
-- **frontend/src/** — React frontend
+- **frontend/src/** — React TypeScript frontend
 
 ## Key Design Decisions
 
@@ -34,10 +37,11 @@ Go + Wails v2 + React GUI.
 - **Polling** — Socket Mode unavailable for User Tokens. Only realistic option.
 - **Per-workspace API queue** — Rate limits are per-workspace. Priority control on response.
 - **3-tier knowledge isolation** — Channel (L1) → WS cross-channel (L2) → cross-WS (L3). Default is L1.
+- **Embedding independent of LLM** — Prevents re-indexing on LLM backend switch. ModelID tracks consistency.
 - **Keychain-first** — Tokens in macOS Keychain via go-keyring. Never in config.toml.
-- **MITL proxy response** — All Slack posts require user approval. No automatic posting.
+- **MITL proxy response** — All Slack posts require user approval. Signature for sender identification.
 - **Time awareness** — Current time in system prompt + timestamps on all records (shell-agent pattern).
-- **LLM backend interface** — data-agent pattern. Config-driven local/vertex_ai switching.
+- **DuckDB ART index limitation** — No PRIMARY KEY on tables with UPDATE; use plain indexes.
 
 ## Series
 
