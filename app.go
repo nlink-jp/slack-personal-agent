@@ -602,7 +602,14 @@ func (a *App) Query(workspaceID, channelID, question string) (*QueryResponse, er
 			ChannelID:   r.ChannelID,
 			Score:       r.Score,
 		}
-		if rec, err := a.store.GetRecord(a.ctx, r.RecordID); err == nil {
+		if r.ChannelID == "__knowledge__" {
+			// Knowledge base entry
+			if entry, err := a.kb.Get(a.ctx, r.RecordID); err == nil {
+				qr.Content = entry.Content
+				qr.UserName = "Knowledge: " + entry.Title
+				qr.ChannelName = "knowledge"
+			}
+		} else if rec, err := a.store.GetRecord(a.ctx, r.RecordID); err == nil {
 			qr.Content = rec.Content
 			qr.UserName = rec.UserName
 			qr.Ts = rec.Ts
@@ -621,10 +628,13 @@ func (a *App) Query(workspaceID, channelID, question string) (*QueryResponse, er
 		// Build context from source records
 		var contextParts []string
 		for _, s := range sources {
-			records, _ := a.store.FindByChannel(a.ctx, s.WorkspaceID, s.ChannelID, memory.TierHot, 1)
-			for _, r := range records {
-				if r.ID == s.RecordID {
-					wrapped, _ := tag.Wrap(fmt.Sprintf("[%s] %s: %s", r.Ts, r.UserName, r.Content))
+			if s.Content != "" {
+				wrapped, _ := tag.Wrap(fmt.Sprintf("[%s] %s: %s", s.Ts, s.UserName, s.Content))
+				contextParts = append(contextParts, wrapped)
+			} else if s.ChannelID == "__knowledge__" {
+				// Knowledge base entry — fetch from knowledge store
+				if entry, err := a.kb.Get(a.ctx, s.RecordID); err == nil {
+					wrapped, _ := tag.Wrap(fmt.Sprintf("[Knowledge: %s] %s", entry.Title, entry.Content))
 					contextParts = append(contextParts, wrapped)
 				}
 			}
