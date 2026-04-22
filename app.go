@@ -979,6 +979,8 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			assessment.WorkspaceID, assessment.WorkspaceID,
 			assessment.ChannelID, assessment.ChannelName,
 			assessment.ThreadTs, assessment.TriggerText, assessment.DraftReply)
+		// Bring window to front so user sees the proposal
+		wailsRuntime.WindowShow(a.ctx)
 
 	case agent.VerdictReview:
 		// Notify user that their attention is needed
@@ -989,5 +991,7 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			body = body[:100] + "..."
 		}
 		notify.SendWithSubtitle(a.ctx, title, subtitle, body)
+		// Bring window to front
+		wailsRuntime.WindowShow(a.ctx)
 	}
 }
