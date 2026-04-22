@@ -105,9 +105,11 @@ func (e *BuiltinEmbedder) ensureInitialized(ctx context.Context) error {
 	e.session = session
 
 	// Create feature extraction pipeline
+	// Explicitly select the base ONNX model (the repo contains multiple variants)
 	pipelineConfig := hugot.FeatureExtractionConfig{
-		ModelPath: modelPath,
-		Name:      "embedding",
+		ModelPath:    modelPath,
+		Name:         "embedding",
+		OnnxFilename: "onnx/model.onnx",
 	}
 	pipeline, err := hugot.NewPipeline(session, pipelineConfig)
 	if err != nil {
