@@ -62,17 +62,20 @@ func (a *App) startup(ctx context.Context) {
 	a.log.Info("starting slack-personal-agent %s", version)
 
 	// Load config
+	a.log.Info("loading config...")
 	cfg, err := config.Load(config.DefaultConfigPath())
 	if err != nil {
 		a.log.Warn("config load failed: %v", err)
 		cfg = config.DefaultConfig()
 	}
 	a.cfg = cfg
+	a.log.Info("config loaded (%d workspaces)", len(cfg.Workspaces))
 
 	// Initialize keychain
 	a.keys = &keychain.OSStore{}
 
 	// Initialize memory store (DuckDB)
+	a.log.Info("opening database...")
 	dbPath := filepath.Join(dataDir, "spa.db")
 	store, err := memory.Open(dbPath)
 	if err != nil {
@@ -80,28 +83,35 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.store = store
+	a.log.Info("database opened")
 
 	// Initialize LLM backend
+	a.log.Info("initializing LLM backend...")
 	backend, err := llm.NewBackend(cfg)
 	if err != nil {
 		a.log.Warn("LLM backend init failed: %v", err)
 	}
 	a.backend = backend
+	a.log.Info("LLM backend ready")
 
 	// Initialize embedding
+	a.log.Info("initializing embedding (backend=%s)...", cfg.Embedding.Backend)
 	embedder, err := embedding.NewEmbedder(cfg)
 	if err != nil {
 		a.log.Warn("embedding init failed (using mock): %v", err)
 		embedder = embedding.NewMockEmbedder(384)
 	}
 	a.embedder = embedder
+	a.log.Info("embedding ready (model=%s)", embedder.ModelID())
 
 	// Initialize RAG retriever
+	a.log.Info("initializing RAG...")
 	retriever := rag.NewRetriever(store.DB(), embedder)
 	if err := retriever.Migrate(); err != nil {
 		a.log.Error("RAG migration failed: %v", err)
 	}
 	a.retriever = retriever
+	a.log.Info("RAG ready")
 
 	// Initialize knowledge base
 	kb := knowledge.NewStore(store.DB())
@@ -109,6 +119,7 @@ func (a *App) startup(ctx context.Context) {
 		a.log.Error("knowledge migration failed: %v", err)
 	}
 	a.kb = kb
+	a.log.Info("startup complete")
 
 	// Initialize MITL manager
 	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
