@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/primary.swiftdeps"
+  },
+  "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/Sources/main.swift": {
+    "dependencies": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/main.d",
+    "object": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/main.swift.o",
+    "swiftmodule": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/main.swiftdeps",
+    "diagnostics": "/Users/magi/works/nlink-jp/chatops-series/slack-personal-agent/notifier/.build/arm64-apple-macosx/debug/spa_notify.build/main.dia"
+  }
+}

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/logger"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
+	"github.com/nlink-jp/slack-personal-agent/internal/notifysock"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
 	"github.com/nlink-jp/slack-personal-agent/internal/slack"
 	"github.com/nlink-jp/slack-personal-agent/internal/timectx"
@@ -35,8 +38,9 @@ type App struct {
 	embedder  embedding.Embedder
 	keys      keychain.Store
 	kb        *knowledge.Store
-	mitlMgr   *mitl.Manager
-	agents    map[string]*agent.Pipeline // workspace → agent pipeline
+	mitlMgr    *mitl.Manager
+	notifySrv  *notifysock.Server
+	agents     map[string]*agent.Pipeline // workspace → agent pipeline
 	clients    map[string]*slack.Client       // workspace → client for posting
 	selfIDs    map[string]string              // workspace → authenticated user ID
 	pollers    map[string]*slack.WorkspacePoller
@@ -142,10 +146,27 @@ func (a *App) startup(ctx context.Context) {
 		a.log.Warn("embedding model changed (stored=%q, current=%q) — re-index recommended", storedID, embedder.ModelID())
 	}
 
+	// Start notification socket server
+	a.notifySrv = notifysock.NewServer(dataDir)
+	if err := a.notifySrv.Start(ctx); err != nil {
+		a.log.Warn("notification socket failed: %v", err)
+	} else {
+		a.log.Info("notification socket: %s", a.notifySrv.SocketPath())
+		a.notifySrv.OnAction = func(action string) {
+			a.log.Info("notification clicked: action=%s", action)
+			wailsRuntime.WindowShow(a.ctx)
+			wailsRuntime.EventsEmit(a.ctx, "notification:clicked", action)
+		}
+		// Launch notifier helper if available
+		go a.startNotifierHelper()
+	}
+
 	// Restore window position from config
 	if cfg.Window.X != 0 || cfg.Window.Y != 0 {
 		wailsRuntime.WindowSetPosition(ctx, cfg.Window.X, cfg.Window.Y)
 	}
+
+	a.log.Info("startup complete")
 }
 
 // shutdown is called when the app is closing.
@@ -168,10 +189,43 @@ func (a *App) shutdown(_ context.Context) {
 		}
 	}
 
+	if a.notifySrv != nil {
+		a.notifySrv.Stop()
+	}
 	if a.store != nil {
 		a.store.Close()
 	}
 	logger.Close()
+}
+
+// startNotifierHelper launches the spa-notify helper binary.
+// Looks for it next to the main binary or in the app bundle Resources.
+func (a *App) startNotifierHelper() {
+	// Search paths for the helper binary
+	candidates := []string{
+		filepath.Join(filepath.Dir(os.Args[0]), "spa-notify"),            // Same directory as main binary
+		filepath.Join(filepath.Dir(os.Args[0]), "..", "Resources", "spa-notify"), // Inside .app bundle
+	}
+
+	var helperPath string
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			helperPath = p
+			break
+		}
+	}
+
+	if helperPath == "" {
+		a.log.Debug("spa-notify helper not found, skipping native notifications")
+		return
+	}
+
+	a.log.Info("starting notification helper: %s", helperPath)
+	cmd := exec.CommandContext(a.ctx, helperPath, a.notifySrv.SocketPath())
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		a.log.Warn("failed to start notifier helper: %v", err)
+	}
 }
 
 // ── Wails Bindings ──────────────────────────────────────
@@ -970,12 +1024,34 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			assessment.WorkspaceID, assessment.WorkspaceID,
 			assessment.ChannelID, assessment.ChannelName,
 			assessment.ThreadTs, assessment.TriggerText, assessment.DraftReply)
-		// Bring window to front and notify frontend
+		// Native notification via helper
+		if a.notifySrv != nil {
+			summary := assessment.Summary
+			if len(summary) > 150 {
+				summary = summary[:150] + "..."
+			}
+			a.notifySrv.Notify(assessment.ChannelID,
+				"Response Proposal",
+				fmt.Sprintf("#%s", assessment.ChannelName),
+				summary, "proposals")
+		}
+		// Also notify frontend (in-app toast + tab switch)
 		wailsRuntime.WindowShow(a.ctx)
 		wailsRuntime.EventsEmit(a.ctx, "agent:respond", assessment)
 
 	case agent.VerdictReview:
-		// Bring window to front and notify frontend
+		// Native notification via helper
+		if a.notifySrv != nil {
+			summary := assessment.Summary
+			if len(summary) > 150 {
+				summary = summary[:150] + "..."
+			}
+			a.notifySrv.Notify(assessment.ChannelID,
+				"Action Needed",
+				fmt.Sprintf("#%s", assessment.ChannelName),
+				summary, "dashboard")
+		}
+		// Also notify frontend
 		wailsRuntime.WindowShow(a.ctx)
 		wailsRuntime.EventsEmit(a.ctx, "agent:review", assessment)
 	}
