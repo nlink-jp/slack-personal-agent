@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nlink-jp/nlk/backoff"
 	"github.com/nlink-jp/slack-personal-agent/internal/config"
 )
 
@@ -59,6 +60,12 @@ func (b *LocalBackend) ChatStream(ctx context.Context, req *ChatRequest, cb Stre
 	return err
 }
 
+var llmBackoff = backoff.New(
+	backoff.WithBase(2*time.Second),
+	backoff.WithMax(30*time.Second),
+	backoff.WithJitter(500*time.Millisecond),
+)
+
 func (b *LocalBackend) doChat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
 	body := b.buildRequestBody(req, false)
 	data, err := json.Marshal(body)
@@ -66,41 +73,65 @@ func (b *LocalBackend) doChat(ctx context.Context, req *ChatRequest) (*ChatRespo
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		b.endpoint+"/chat/completions", bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	b.setHeaders(httpReq)
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(llmBackoff.Duration(attempt - 1)):
+			}
+		}
 
-	resp, err := b.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("LLM request: %w", err)
-	}
-	defer resp.Body.Close()
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			b.endpoint+"/chat/completions", bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		b.setHeaders(httpReq)
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, &apiError{StatusCode: resp.StatusCode, Body: string(respBody)}
+		resp, err := b.httpClient.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("LLM request: %w", err)
+			continue
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read LLM response: %w", err)
+		}
+
+		// Retry on 429 and 5xx
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			lastErr = &apiError{StatusCode: resp.StatusCode, Body: string(respBody)}
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, &apiError{StatusCode: resp.StatusCode, Body: string(respBody)}
+		}
+
+		var chatResp openAIChatResponse
+		if err := json.Unmarshal(respBody, &chatResp); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+
+		if len(chatResp.Choices) == 0 {
+			return nil, fmt.Errorf("LLM returned no choices")
+		}
+
+		return &ChatResponse{
+			Content: chatResp.Choices[0].Message.Content,
+			Usage: &Usage{
+				InputTokens:  chatResp.Usage.PromptTokens,
+				OutputTokens: chatResp.Usage.CompletionTokens,
+				TotalTokens:  chatResp.Usage.TotalTokens,
+			},
+		}, nil
 	}
 
-	var chatResp openAIChatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return nil, fmt.Errorf("LLM returned no choices")
-	}
-
-	return &ChatResponse{
-		Content: chatResp.Choices[0].Message.Content,
-		Usage: &Usage{
-			InputTokens:  chatResp.Usage.PromptTokens,
-			OutputTokens: chatResp.Usage.CompletionTokens,
-			TotalTokens:  chatResp.Usage.TotalTokens,
-		},
-	}, nil
+	return nil, fmt.Errorf("LLM request failed after retries: %w", lastErr)
 }
 
 func (b *LocalBackend) doChatStream(ctx context.Context, req *ChatRequest, cb StreamCallback) error {

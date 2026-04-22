@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/knights-analytics/hugot v0.7.1
 	github.com/marcboeker/go-duckdb v1.8.5
+	github.com/nlink-jp/nlk v0.5.1
 	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/zalando/go-keyring v0.2.8
 	google.golang.org/genai v1.54.0

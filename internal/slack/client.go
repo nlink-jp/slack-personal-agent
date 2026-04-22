@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/nlink-jp/nlk/backoff"
 )
 
 const baseURL = "https://slack.com/api"
@@ -248,37 +250,62 @@ func (c *Client) post(ctx context.Context, method string, params url.Values, res
 	return c.do(req, result)
 }
 
+const maxRetries = 3
+
+var apiBackoff = backoff.New(
+	backoff.WithBase(2*time.Second),
+	backoff.WithMax(30*time.Second),
+	backoff.WithJitter(500*time.Millisecond),
+)
+
 func (c *Client) do(req *http.Request, result interface{}) error {
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
+	var lastErr error
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-req.Context().Done():
+				return req.Context().Err()
+			case <-time.After(apiBackoff.Duration(attempt - 1)):
+			}
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("http request: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
+
+		// Retry on 429 (rate limit) and 5xx (server errors)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("slack API %s: HTTP %d", req.URL.Path, resp.StatusCode)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("slack API %s: HTTP %d", req.URL.Path, resp.StatusCode)
+		}
+
+		if err := json.Unmarshal(body, result); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+
+		// Check Slack's ok field
+		var base slackResponse
+		if err := json.Unmarshal(body, &base); err == nil && !base.OK {
+			return fmt.Errorf("slack API %s: %s", req.URL.Path, base.Error)
+		}
+
+		return nil
 	}
 
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return &RateLimitError{RetryAfter: resp.Header.Get("Retry-After")}
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("slack API %s: HTTP %d", req.URL.Path, resp.StatusCode)
-	}
-
-	if err := json.Unmarshal(body, result); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-
-	// Check Slack's ok field
-	var base slackResponse
-	if err := json.Unmarshal(body, &base); err == nil && !base.OK {
-		return fmt.Errorf("slack API %s: %s", req.URL.Path, base.Error)
-	}
-
-	return nil
+	return fmt.Errorf("slack API failed after %d retries: %w", maxRetries, lastErr)
 }
 
 // RateLimitError is returned when Slack responds with 429.
