@@ -65,10 +65,11 @@ func (e *BuiltinEmbedder) Embed(ctx context.Context, texts []string) ([][]float3
 	}
 
 	// Truncate texts to fit within model's max sequence length (512 tokens).
-	// Conservative limit: ~1500 chars covers most 512-token inputs for mixed JP/EN.
+	// MiniLM tokenizes Japanese chars as ~1 token each, so 500 chars ≈ 500 tokens.
+	// Special tokens ([CLS], [SEP]) consume 2 tokens, leaving 510 for content.
 	truncated := make([]string, len(texts))
 	for i, t := range texts {
-		truncated[i] = truncateForEmbedding(t, 1500)
+		truncated[i] = truncateForEmbedding(t, 500)
 	}
 
 	output, err := e.pipeline.RunPipeline(ctx, truncated)
@@ -130,9 +131,9 @@ func (e *BuiltinEmbedder) ensureInitialized(ctx context.Context) error {
 	return nil
 }
 
-// truncateForEmbedding truncates text to approximately maxChars characters,
-// cutting at a word/rune boundary. MiniLM's max sequence length is 512 tokens;
-// ~1500 chars is a safe limit for mixed Japanese/English text.
+// truncateForEmbedding truncates text to maxChars runes.
+// MiniLM's max sequence length is 512 tokens. Japanese characters are tokenized
+// as ~1 token each, so maxChars ≈ max tokens for CJK-heavy text.
 func truncateForEmbedding(text string, maxChars int) string {
 	if len(text) <= maxChars {
 		return text
