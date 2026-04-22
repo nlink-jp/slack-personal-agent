@@ -12,6 +12,15 @@ const (
 	TierCold Tier = "cold" // Archive, read-only
 )
 
+// AuthorType distinguishes message authorship.
+type AuthorType string
+
+const (
+	AuthorOther AuthorType = "other" // Message from another user
+	AuthorSelf  AuthorType = "self"  // Message written directly by the authenticated user
+	AuthorProxy AuthorType = "proxy" // Message posted by spa on behalf of the user (MITL)
+)
+
 // Record represents a stored message or summary in the memory system.
 type Record struct {
 	ID            string    `json:"id"`
@@ -29,8 +38,9 @@ type Record struct {
 	SummaryOf     []string  `json:"summary_of,omitempty"` // IDs of summarized records
 	SummaryFrom   time.Time `json:"summary_from,omitempty"`
 	SummaryTo     time.Time `json:"summary_to,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	EmbeddingID   string    `json:"embedding_id,omitempty"`
+	AuthorType    AuthorType `json:"author_type"`
+	CreatedAt     time.Time  `json:"created_at"`
+	EmbeddingID   string     `json:"embedding_id,omitempty"`
 }
 
 // SlackTimestamp returns the Slack timestamp as a time.Time.

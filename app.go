@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type App struct {
 	kb        *knowledge.Store
 	mitlMgr   *mitl.Manager
 	clients   map[string]*slack.Client // workspace → client for posting
+	selfIDs   map[string]string        // workspace → authenticated user ID
 	pollers   map[string]*slack.WorkspacePoller
 	mu        sync.Mutex
 }
@@ -42,6 +44,7 @@ func NewApp() *App {
 	return &App{
 		pollers: make(map[string]*slack.WorkspacePoller),
 		clients: make(map[string]*slack.Client),
+		selfIDs: make(map[string]string),
 	}
 }
 
@@ -210,6 +213,15 @@ func (a *App) StartPolling(workspace string) error {
 	}
 
 	client := slack.NewClient(token)
+
+	// Identify the authenticated user for author attribution
+	selfID, _, _, err := client.AuthTest(a.ctx)
+	if err != nil {
+		return fmt.Errorf("auth.test for %q: %w", workspace, err)
+	}
+	a.selfIDs[workspace] = selfID
+	log.Printf("Authenticated as user %s in workspace %q", selfID, workspace)
+
 	queue := slack.NewQueue(a.cfg.Polling.MaxRatePerMin)
 	scheduler := slack.NewScheduler(client, queue,
 		a.cfg.Polling.Interval(),
@@ -430,6 +442,27 @@ func knowledgeRAGScope(e *knowledge.Entry) (workspaceID, channelID string) {
 	return e.WorkspaceID, "__knowledge__"
 }
 
+// classifyAuthor determines the authorship type of a message.
+// - proxy: from authenticated user AND contains the proxy signature
+// - self: from authenticated user (direct post)
+// - other: from another user
+func (a *App) classifyAuthor(workspaceName string, msg slack.Message) memory.AuthorType {
+	a.mu.Lock()
+	selfID := a.selfIDs[workspaceName]
+	a.mu.Unlock()
+
+	if selfID == "" || msg.User != selfID {
+		return memory.AuthorOther
+	}
+
+	// Check if this message was posted by spa (contains signature)
+	if strings.Contains(msg.Text, a.cfg.Response.Signature) {
+		return memory.AuthorProxy
+	}
+
+	return memory.AuthorSelf
+}
+
 // handleMessages processes new messages from a workspace poller.
 func (a *App) handleMessages(workspaceName, channelID string, messages []slack.Message) {
 	for _, msg := range messages {
@@ -447,6 +480,7 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 			ThreadTs:      msg.ThreadTs,
 			Content:       msg.Text,
 			Tier:          memory.TierHot,
+			AuthorType:    a.classifyAuthor(workspaceName, msg),
 			CreatedAt:     time.Now(),
 		}
 

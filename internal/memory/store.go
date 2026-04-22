@@ -62,6 +62,7 @@ func (s *Store) migrate() error {
 			thread_ts     VARCHAR NOT NULL DEFAULT '',
 			content       VARCHAR NOT NULL,
 			tier          VARCHAR NOT NULL DEFAULT 'hot',
+			author_type   VARCHAR NOT NULL DEFAULT 'other',
 			is_summary    BOOLEAN NOT NULL DEFAULT FALSE,
 			summary_of    VARCHAR NOT NULL DEFAULT '[]',
 			summary_from  TIMESTAMP,
@@ -99,11 +100,11 @@ func (s *Store) migrate() error {
 func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO records (id, workspace_id, workspace_name, channel_id, channel_name,
-			user_id, user_name, ts, thread_ts, content, tier, is_summary,
+			user_id, user_name, ts, thread_ts, content, tier, author_type, is_summary,
 			summary_of, summary_from, summary_to, created_at, embedding_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.WorkspaceID, r.WorkspaceName, r.ChannelID, r.ChannelName,
-		r.UserID, r.UserName, r.Ts, r.ThreadTs, r.Content, string(r.Tier),
+		r.UserID, r.UserName, r.Ts, r.ThreadTs, r.Content, string(r.Tier), string(r.AuthorType),
 		r.IsSummary, marshalSummaryOf(r.SummaryOf), nullTime(r.SummaryFrom), nullTime(r.SummaryTo),
 		r.CreatedAt, r.EmbeddingID,
 	)
@@ -114,7 +115,7 @@ func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
 func (s *Store) FindByChannel(ctx context.Context, workspaceID, channelID string, tier Tier, limit int) ([]Record, error) {
 	query := `
 		SELECT id, workspace_id, workspace_name, channel_id, channel_name,
-			user_id, user_name, ts, thread_ts, content, tier, is_summary,
+			user_id, user_name, ts, thread_ts, content, tier, author_type, is_summary,
 			summary_of, created_at, embedding_id
 		FROM records
 		WHERE workspace_id = ? AND channel_id = ? AND tier = ?
@@ -136,7 +137,7 @@ func (s *Store) FindHotOlderThan(ctx context.Context, age time.Duration) ([]Reco
 
 	query := `
 		SELECT id, workspace_id, workspace_name, channel_id, channel_name,
-			user_id, user_name, ts, thread_ts, content, tier, is_summary,
+			user_id, user_name, ts, thread_ts, content, tier, author_type, is_summary,
 			summary_of, created_at, embedding_id
 		FROM records
 		WHERE tier = 'hot' AND created_at < ?
@@ -225,17 +226,19 @@ func scanRecords(rows *sql.Rows) ([]Record, error) {
 	for rows.Next() {
 		var r Record
 		var tier string
+		var authorType string
 		var summaryOfJSON string
 
 		err := rows.Scan(
 			&r.ID, &r.WorkspaceID, &r.WorkspaceName, &r.ChannelID, &r.ChannelName,
-			&r.UserID, &r.UserName, &r.Ts, &r.ThreadTs, &r.Content, &tier,
+			&r.UserID, &r.UserName, &r.Ts, &r.ThreadTs, &r.Content, &tier, &authorType,
 			&r.IsSummary, &summaryOfJSON, &r.CreatedAt, &r.EmbeddingID,
 		)
 		if err != nil {
 			return nil, err
 		}
 		r.Tier = Tier(tier)
+		r.AuthorType = AuthorType(authorType)
 		r.SummaryOf = unmarshalSummaryOf(summaryOfJSON)
 		records = append(records, r)
 	}

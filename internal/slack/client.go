@@ -111,6 +111,24 @@ type postResponse struct {
 	Channel string `json:"channel"`
 }
 
+// authTestResponse is the response from auth.test.
+type authTestResponse struct {
+	slackResponse
+	UserID string `json:"user_id"`
+	User   string `json:"user"`
+	TeamID string `json:"team_id"`
+	Team   string `json:"team"`
+}
+
+// AuthTest returns the authenticated user's identity.
+func (c *Client) AuthTest(ctx context.Context) (userID, userName, teamID string, err error) {
+	var resp authTestResponse
+	if err := c.post(ctx, "auth.test", nil, &resp); err != nil {
+		return "", "", "", err
+	}
+	return resp.UserID, resp.User, resp.TeamID, nil
+}
+
 // ListChannels returns channels the user has joined or can read.
 // Excludes DMs and archived channels.
 func (c *Client) ListChannels(ctx context.Context) ([]Channel, error) {
