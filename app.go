@@ -19,7 +19,6 @@ import (
 	"github.com/nlink-jp/slack-personal-agent/internal/logger"
 	"github.com/nlink-jp/slack-personal-agent/internal/memory"
 	"github.com/nlink-jp/slack-personal-agent/internal/mitl"
-	"github.com/nlink-jp/slack-personal-agent/internal/notify"
 	"github.com/nlink-jp/slack-personal-agent/internal/rag"
 	"github.com/nlink-jp/slack-personal-agent/internal/slack"
 	"github.com/nlink-jp/slack-personal-agent/internal/timectx"
@@ -130,14 +129,6 @@ func (a *App) startup(ctx context.Context) {
 	a.mitlMgr = mitl.NewManager(cfg.Response.Timeout())
 	a.mitlMgr.OnProposal = func(p *mitl.Proposal) {
 		a.log.Info("MITL proposal: [%s/%s] %s", p.WorkspaceName, p.ChannelName, p.DraftText[:min(len(p.DraftText), 80)])
-		// macOS notification
-		title := "spa: Response Proposal"
-		subtitle := fmt.Sprintf("%s / %s", p.WorkspaceName, p.ChannelName)
-		body := p.DraftText
-		if len(body) > 100 {
-			body = body[:100] + "..."
-		}
-		notify.SendWithSubtitle(ctx, title, subtitle, body)
 	}
 	a.mitlMgr.OnExpire = func(p *mitl.Proposal) {
 		a.log.Info("MITL expired: %s", p.ID)
@@ -979,19 +970,13 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			assessment.WorkspaceID, assessment.WorkspaceID,
 			assessment.ChannelID, assessment.ChannelName,
 			assessment.ThreadTs, assessment.TriggerText, assessment.DraftReply)
-		// Bring window to front so user sees the proposal
+		// Bring window to front and notify frontend
 		wailsRuntime.WindowShow(a.ctx)
+		wailsRuntime.EventsEmit(a.ctx, "agent:respond", assessment)
 
 	case agent.VerdictReview:
-		// Notify user that their attention is needed
-		title := "spa: Action Needed"
-		subtitle := fmt.Sprintf("%s / #%s", workspaceName, assessment.ChannelName)
-		body := assessment.Summary
-		if len(body) > 100 {
-			body = body[:100] + "..."
-		}
-		notify.SendWithSubtitle(a.ctx, title, subtitle, body)
-		// Bring window to front
+		// Bring window to front and notify frontend
 		wailsRuntime.WindowShow(a.ctx)
+		wailsRuntime.EventsEmit(a.ctx, "agent:review", assessment)
 	}
 }

@@ -60,6 +60,30 @@ function App() {
   const [workspaces, setWorkspaces] = useState<WorkspaceStatus[]>([]);
   const [memoryStats, setMemoryStats] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
+  const [toast, setToast] = useState<{ type: string; message: string } | null>(null);
+
+  // Listen for agent events from backend
+  useEffect(() => {
+    const onRespond = (data: any) => {
+      setToast({ type: "respond", message: `Response proposal: ${data?.channel_name || ""} — ${data?.summary || ""}` });
+      setTab("proposals");
+      setTimeout(() => setToast(null), 8000);
+    };
+    const onReview = (data: any) => {
+      setToast({ type: "review", message: `Action needed: ${data?.channel_name || ""} — ${data?.summary || ""}` });
+      setTimeout(() => setToast(null), 8000);
+    };
+    // @ts-ignore — Wails runtime events
+    window.runtime?.EventsOn("agent:respond", onRespond);
+    // @ts-ignore
+    window.runtime?.EventsOn("agent:review", onReview);
+    return () => {
+      // @ts-ignore
+      window.runtime?.EventsOff("agent:respond");
+      // @ts-ignore
+      window.runtime?.EventsOff("agent:review");
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -96,6 +120,12 @@ function App() {
           </button>
         ))}
       </nav>
+
+      {toast && (
+        <div className={`toast toast-${toast.type}`} onClick={() => setToast(null)}>
+          {toast.type === "respond" ? "💬 " : "⚠️ "}{toast.message}
+        </div>
+      )}
 
       {error && <div className="error">{error}</div>}
 

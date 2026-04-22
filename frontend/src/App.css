@@ -93,6 +93,33 @@ textarea {
   font-size: 0.875rem;
 }
 
+/* Toast notification */
+.toast {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  animation: slideIn 0.3s ease-out;
+}
+
+.toast-respond {
+  background: rgba(88, 166, 255, 0.15);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.toast-review {
+  background: rgba(210, 153, 34, 0.15);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .error {
   background: rgba(248, 81, 73, 0.1);
   border: 1px solid var(--danger);
