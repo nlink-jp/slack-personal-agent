@@ -909,10 +909,6 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 		return
 	}
 
-	// Build message context — only evaluate the most recent messages
-	// to avoid overwhelming the LLM with large conversation dumps.
-	const maxEvalMessages = 10
-
 	channelName := a.store.GetCachedChannelName(a.ctx, workspaceName, channelID)
 	mc := agent.MessageContext{
 		WorkspaceID:   workspaceName,
@@ -921,7 +917,25 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 		ChannelName:   channelName,
 	}
 
-	// Messages from Slack are newest-first; reverse to chronological order
+	// Fetch recent history from DB to provide conversation context.
+	// New messages alone lack context — the LLM needs to see the conversation flow.
+	const recentHistorySize = 10
+	recentRecords, _ := a.store.FindByChannel(a.ctx, workspaceName, channelID, memory.TierHot, recentHistorySize)
+	// Records come newest-first from DB; reverse to chronological
+	for i := len(recentRecords) - 1; i >= 0; i-- {
+		r := recentRecords[i]
+		mc.RecentHistory = append(mc.RecentHistory, agent.MessageInfo{
+			User:     r.UserID,
+			UserName: r.UserName,
+			Text:     r.Content,
+			Ts:       r.Ts,
+			ThreadTs: r.ThreadTs,
+			IsBot:    r.AuthorType == memory.AuthorBot,
+			IsSelf:   r.AuthorType == memory.AuthorSelf || r.AuthorType == memory.AuthorProxy,
+		})
+	}
+
+	// New messages to evaluate
 	var allMsgs []agent.MessageInfo
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
@@ -939,14 +953,7 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			IsSelf:   msg.User == selfID,
 		})
 	}
-
-	// Split: older messages as context, recent ones as evaluation target
-	if len(allMsgs) > maxEvalMessages {
-		mc.RecentHistory = allMsgs[:len(allMsgs)-maxEvalMessages]
-		mc.Messages = allMsgs[len(allMsgs)-maxEvalMessages:]
-	} else {
-		mc.Messages = allMsgs
-	}
+	// mc.Messages already set above; mc.RecentHistory from DB
 
 	if len(mc.Messages) == 0 {
 		return
