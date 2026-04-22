@@ -199,6 +199,7 @@ type Scheduler struct {
 	queue    *Queue
 	client   *Client
 	channels []string
+	chMu     sync.Mutex
 	interval time.Duration
 	boostDur time.Duration
 }
@@ -215,6 +216,8 @@ func NewScheduler(client *Client, queue *Queue, interval, boostDuration time.Dur
 
 // SetChannels updates the list of channels to poll.
 func (s *Scheduler) SetChannels(channelIDs []string) {
+	s.chMu.Lock()
+	defer s.chMu.Unlock()
 	s.channels = channelIDs
 }
 
@@ -243,7 +246,12 @@ func (s *Scheduler) BoostChannel(channelID string) {
 }
 
 func (s *Scheduler) enqueueAll() {
-	for _, ch := range s.channels {
+	s.chMu.Lock()
+	chs := make([]string, len(s.channels))
+	copy(chs, s.channels)
+	s.chMu.Unlock()
+
+	for _, ch := range chs {
 		s.queue.Enqueue(ch)
 	}
 }

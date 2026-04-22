@@ -96,8 +96,15 @@ func (s *Store) migrate() error {
 	return err
 }
 
-// InsertRecord inserts a new memory record.
+// InsertRecord inserts a new memory record, skipping if a record with the same ID already exists.
 func (s *Store) InsertRecord(ctx context.Context, r *Record) error {
+	// Check for existing record to prevent duplicates (e.g., after restart)
+	var count int
+	s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM records WHERE id = ?`, r.ID).Scan(&count)
+	if count > 0 {
+		return nil // Already exists, skip
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO records (id, workspace_id, workspace_name, channel_id, channel_name,
 			user_id, user_name, ts, thread_ts, content, tier, author_type, is_summary,

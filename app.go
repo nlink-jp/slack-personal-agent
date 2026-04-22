@@ -507,4 +507,10 @@ func (a *App) handleMessages(workspaceName, channelID string, messages []slack.M
 			log.Printf("Error indexing record: %v", err)
 		}
 	}
+
+	// Persist latest timestamp for incremental polling after restart
+	if len(messages) > 0 {
+		latestTs := messages[0].Ts // Messages are newest-first from Slack
+		a.store.UpdateChannelPolled(a.ctx, workspaceName, channelID, latestTs)
+	}
 }
