@@ -40,6 +40,7 @@ type App struct {
 	kb        *knowledge.Store
 	mitlMgr    *mitl.Manager
 	notifySrv  *notifysock.Server
+	notifyCmd  *exec.Cmd
 	agents     map[string]*agent.Pipeline // workspace → agent pipeline
 	clients    map[string]*slack.Client       // workspace → client for posting
 	selfIDs    map[string]string              // workspace → authenticated user ID
@@ -189,6 +190,10 @@ func (a *App) shutdown(_ context.Context) {
 		}
 	}
 
+	if a.notifyCmd != nil && a.notifyCmd.Process != nil {
+		a.notifyCmd.Process.Kill()
+		a.notifyCmd.Wait()
+	}
 	if a.notifySrv != nil {
 		a.notifySrv.Stop()
 	}
@@ -219,11 +224,14 @@ func (a *App) startNotifierHelper() {
 	}
 
 	a.log.Info("starting notification helper: %s", helperPath)
-	cmd := exec.CommandContext(a.ctx, helperPath, a.notifySrv.SocketPath())
+	cmd := exec.Command(helperPath, a.notifySrv.SocketPath())
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		a.log.Warn("failed to start notifier helper: %v", err)
+		return
 	}
+	a.notifyCmd = cmd
+	a.log.Info("notification helper started (pid %d)", cmd.Process.Pid)
 }
 
 // ── Wails Bindings ──────────────────────────────────────
@@ -1028,10 +1036,16 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			if len(summary) > 150 {
 				summary = summary[:150] + "..."
 			}
-			a.notifySrv.Notify(assessment.ChannelID,
+			if err := a.notifySrv.Notify(assessment.ChannelID,
 				"Response Proposal",
 				fmt.Sprintf("#%s", assessment.ChannelName),
-				summary, "proposals")
+				summary, "proposals"); err != nil {
+				a.log.Warn("notify send failed: %v", err)
+			} else {
+				a.log.Info("notification sent: respond")
+			}
+		} else {
+			a.log.Debug("notifySrv is nil, skipping notification")
 		}
 		// Also notify frontend (in-app toast + tab switch)
 		wailsRuntime.WindowShow(a.ctx)
@@ -1044,10 +1058,14 @@ func (a *App) runAgentPipeline(workspaceName, channelID string, messages []slack
 			if len(summary) > 150 {
 				summary = summary[:150] + "..."
 			}
-			a.notifySrv.Notify(assessment.ChannelID,
+			if err := a.notifySrv.Notify(assessment.ChannelID,
 				"Action Needed",
 				fmt.Sprintf("#%s", assessment.ChannelName),
-				summary, "dashboard")
+				summary, "dashboard"); err != nil {
+				a.log.Warn("notify send failed: %v", err)
+			} else {
+				a.log.Info("notification sent: review")
+			}
 		}
 		// Also notify frontend
 		wailsRuntime.WindowShow(a.ctx)
